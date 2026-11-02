@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import type { GraphConfig } from "@mauth-studio/shared";
 
 import { ImageDiagramCanvas } from "@/components/diagrams/ImageDiagramCanvas";
+import { FormattedText } from "@/components/MathText";
 import { DiagramRenderBoundary, DiagramRenderPlaceholder } from "@/components/preview/DiagramRenderBoundary";
 import { graphHeight, graphWidth, isSolutionOnlyGraphFeature, isSolutionOnlyGraphFunction } from "@/lib/diagramGraph2d";
 import { geometry2dData, geometry2dDataHasSolutionOnly } from "@/lib/diagramGeometry2d";
@@ -47,13 +48,30 @@ interface PreviewDiagramProps {
 
 export function PreviewDiagram(props: PreviewDiagramProps) {
   const config = props.withGraphDefaults(props.graphConfig);
-  if (props.measureOnly) return <DiagramRenderPlaceholder config={config} />;
-  return (
+  const drawing = props.measureOnly ? (
+    <DiagramRenderPlaceholder config={config} />
+  ) : (
     <DiagramRenderBoundary config={config}>
       <Suspense fallback={<DiagramRenderPlaceholder config={config} state="loading" />}>
         <PreviewDiagramContent {...props} />
       </Suspense>
     </DiagramRenderBoundary>
+  );
+  if (!config.title?.trim() && !config.caption?.trim()) return drawing;
+  return (
+    <figure className="test-diagram-figure">
+      {config.title?.trim() ? (
+        <div className="test-diagram-title">
+          <FormattedText text={config.title} />
+        </div>
+      ) : null}
+      {drawing}
+      {config.caption?.trim() ? (
+        <figcaption className="test-diagram-caption">
+          <FormattedText text={config.caption} />
+        </figcaption>
+      ) : null}
+    </figure>
   );
 }
 

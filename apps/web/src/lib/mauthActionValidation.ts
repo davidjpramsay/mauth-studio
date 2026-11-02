@@ -526,6 +526,8 @@ function validateModuleSettingsUpdate(value: unknown, path: string, issues: Maut
   if (value.kind === "diagram") {
     enumField(value, "diagramAlign", path, ALIGNMENTS, issues, true);
     enumField(value, "diagramTextSide", path, DIAGRAM_TEXT_SIDES, issues, true);
+    stringValueField(value, "title", path, issues, true);
+    stringValueField(value, "caption", path, issues, true);
   }
 }
 

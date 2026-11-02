@@ -22,6 +22,27 @@ test("normalizeDiagramType maps legacy graph names and rejects unknown types", (
   assert.equal(isPenroseDiagramType("network"), true);
 });
 
+test("every diagram family preserves attached title and caption through defaults and type changes", () => {
+  for (const type of [
+    "graph2d",
+    "geometry2d",
+    "vector2d",
+    "graph3d",
+    "statsChart",
+    "image",
+    "geometricConstruction",
+    "network",
+    "setDiagram",
+  ]) {
+    const config = withGraphDefaults({ type, title: "Plot A", caption: "Figure $\\alpha$" });
+    assert.equal(config.title, "Plot A");
+    assert.equal(config.caption, "Figure $\\alpha$");
+    const changed = updateGraphConfig(config, diagramTypePatch("statsChart", config));
+    assert.equal(changed.title, "Plot A");
+    assert.equal(changed.caption, "Figure $\\alpha$");
+  }
+});
+
 test("diagramTypePatch resets stale non-coordinate diagram state when switching type", () => {
   const patch = diagramTypePatch("graph3d", {
     type: "setDiagram",

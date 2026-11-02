@@ -1995,6 +1995,8 @@ export function validateMauthDiagramConfig(value: unknown, path: string, issues:
   }
 
   requiredEnum(value, "type", path, SUPPORTED_DIAGRAM_TYPES, issues);
+  optionalString(value, "title", path, issues);
+  optionalString(value, "caption", path, issues);
   if (typeof value.type !== "string" || !SUPPORTED_DIAGRAM_TYPES.has(value.type)) return;
 
   if (value.type === "graph2d") validateCoordinateGraph(value, path, issues);

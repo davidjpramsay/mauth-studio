@@ -3,6 +3,30 @@ import test from "node:test";
 
 import { validateMauthDocumentActionPayloads } from "./mauthActionValidation.ts";
 
+test("shared diagram titles and captions accept text and reject malformed payloads", () => {
+  for (const type of ["graph2d", "statsChart"]) {
+    const action = {
+      type: "diagram.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "d1",
+      graphConfig: { type, title: "Plot $A$", caption: "Figure 1", ...(type === "statsChart" ? { data: { chartType: "blankAxes" } } : {}) },
+    };
+    assert.equal(validateMauthDocumentActionPayloads([action]).ok, true);
+    const invalid = validateMauthDocumentActionPayloads([{ ...action, graphConfig: { ...action.graphConfig, title: 42, caption: [] } }]);
+    assert.equal(invalid.ok, false);
+    assert.ok(invalid.issues.some((issue) => issue.path.endsWith(".title")));
+    assert.ok(invalid.issues.some((issue) => issue.path.endsWith(".caption")));
+  }
+  const action = {
+    type: "module.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "d1",
+    settings: { kind: "diagram", title: "", caption: "$(b)$" },
+  };
+  assert.equal(validateMauthDocumentActionPayloads([action]).ok, true);
+  assert.equal(validateMauthDocumentActionPayloads([{ ...action, settings: { kind: "diagram", caption: null } }]).ok, false);
+});
+
 test("graph2d line segment features accept grid span mode", () => {
   const result = validateMauthDocumentActionPayloads([
     {

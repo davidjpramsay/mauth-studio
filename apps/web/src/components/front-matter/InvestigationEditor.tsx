@@ -306,6 +306,7 @@ export function InvestigationEditor({
                           </div>
                           <DiagramBlockEditor
                             label={`Investigation diagram ${diagramIndex + 1}`}
+                            showFigureText={false}
                             graphConfig={diagram.graphConfig}
                             alignment={diagram.alignment}
                             showSolutions={false}

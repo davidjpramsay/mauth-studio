@@ -3,6 +3,7 @@ import type { DiagramAlignment, GraphConfig } from "@mauth-studio/shared";
 
 import { InlineSummaryTitle } from "@/components/MathText";
 import { DiagramBlockPanel } from "@/components/editor/DiagramBlockPanel";
+import { DiagramFigureTextEditor } from "@/components/editor/DiagramFigureTextEditor";
 import { FunctionGraphEditor } from "@/components/editor/FunctionGraphEditor";
 import { GeometricConstructionEditor } from "@/components/editor/GeometricConstructionEditor";
 import { Geometry2DGraphEditor } from "@/components/editor/Geometry2DGraphEditor";
@@ -29,6 +30,7 @@ interface DiagramBlockEditorProps {
   alignment?: DiagramAlignment;
   showSolutions?: boolean;
   settingsMode?: "inline" | "inspector";
+  showFigureText?: boolean;
   anchor?: string;
   activeAnchor?: string;
   dragHandle?: ReactNode;
@@ -56,6 +58,7 @@ export function DiagramBlockEditor({
   alignment = "center",
   showSolutions = true,
   settingsMode = "inline",
+  showFigureText = true,
   anchor,
   activeAnchor,
   dragHandle,
@@ -92,6 +95,9 @@ export function DiagramBlockEditor({
       onCompleteInSolutions={onCompleteInSolutions}
       onRemove={onRemove}
     >
+      {showFigureText ? (
+        <DiagramFigureTextEditor label={label} config={graphConfig} onChange={(patch) => onChange({ ...graphConfig, ...patch })} />
+      ) : null}
       {children}
     </DiagramBlockPanel>
   );

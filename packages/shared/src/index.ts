@@ -319,6 +319,8 @@ export interface GraphMetadata extends Record<string, unknown> {
 
 export interface GraphConfig {
   type: DiagramType;
+  title?: string;
+  caption?: string;
   data?:
     | GeometricDiagramData
     | Graph2DGeometryData
@@ -1056,6 +1058,8 @@ export interface MauthAgentModuleSummary {
   recommendedDiagramTool?: DiagramToolSummary & { reason: string };
   diagramWarnings?: Array<{ code: string; message: string; targetId?: string }>;
   diagramAlign?: DiagramAlignment;
+  diagramTitle?: string;
+  diagramCaption?: string;
   childModules?: MauthAgentModuleSummary[];
 }
 

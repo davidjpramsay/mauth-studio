@@ -295,3 +295,18 @@ The durable pieces that remain are:
 Future AI integration should build from these contracts outward, preferably as an external-agent workflow or explicit MCP/App surface, not as another opaque in-app chat loop.
 
 The preferred next integration is a local agent bridge over snapshots, action preview/apply, validation, comments, suggestions, presence, and events. MCP/App wrappers should call that same bridge rather than inventing another mutation path.
+
+## Attached Diagram Titles And Captions
+
+The Content editor exposes **Title (above)** and **Caption (below)** for every diagram family. Both are optional, centred on the drawing and rendered with the document text/math formatting. Empty strings hide them without a reserved gap. Stored fields are `graphConfig.title` and `graphConfig.caption`. For focused edits, use:
+
+```json
+{
+  "type": "module.settings.update",
+  "scope": { "kind": "question", "questionId": "q1" },
+  "blockId": "plot-a",
+  "settings": { "kind": "diagram", "title": "Plot A: used cars", "caption": "Figure $\\alpha$" }
+}
+```
+
+Omit either field to preserve it; use an empty string to clear it. This works for nested diagrams in columns and retains coordinates, ranges, hidden answer elements and sibling data. Snapshots expose `diagramTitle` and `diagramCaption`. Legacy statistical `data.title` keeps its native presentation until explicitly edited: a title edit stores the shared field and clears only the old chart title. A shared title takes precedence if both exist. Investigation documents retain their existing page-level figure title/caption controls.

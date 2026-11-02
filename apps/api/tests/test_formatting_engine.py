@@ -1,5 +1,22 @@
 from formatting_engine.engine import FormattingEngine
 
+from app.models.schemas import ContentBlock
+
+
+def test_attached_diagram_text_round_trips_and_formats_math_safely():
+    block = ContentBlock.model_validate(
+        {
+            "kind": "diagram",
+            "graphConfig": {"type": "graph2d", "title": "A < B", "caption": r"Figure $\frac{1}{2}$"},
+        }
+    ).model_dump()
+    assert block["graphConfig"]["title"] == "A < B"
+    assert block["graphConfig"]["caption"] == r"Figure $\frac{1}{2}$"
+    rendered = FormattingEngine._content_block_html(block)
+    assert "A &lt; B" in rendered
+    assert r"\displaystyle \frac{1}{2}" in rendered
+    assert rendered.index("diagram-title") < rendered.index("question-diagram") < rendered.index("<figcaption>")
+
 
 def test_mixed_math_ignores_escaped_currency_dollars():
     rendered = FormattingEngine._mixed_math_html(r"Amy borrows \$8500 at a rate of $5.7\%$ p.a., compounding annually.")

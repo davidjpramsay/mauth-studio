@@ -16,6 +16,7 @@ import {
 } from "../../../../packages/shared/src/diagramTools.ts";
 import { investigationTotalMarks, normalizeInvestigation } from "./frontMatterConfig.ts";
 import { tableSolutionEntryCount } from "./tableSolutionEntries.ts";
+import { diagramTitle } from "./diagramFigureText.ts";
 
 import type { MauthDocumentLike, MauthPartLike, MauthQuestionLike, MauthSubpartLike } from "./mauthActions.ts";
 
@@ -120,9 +121,13 @@ function summarizeBlock(block: ContentBlock, context: string[] = []): MauthAgent
       }
     }
     summary.diagramAlign = block.diagramAlign;
+    summary.diagramTitle = diagramTitle(block.graphConfig);
+    summary.diagramCaption = block.graphConfig.caption ?? "";
     summary.textPreview = compactText(
       [
         block.graphConfig.type,
+        diagramTitle(block.graphConfig),
+        block.graphConfig.caption,
         block.graphConfig.expression,
         block.graphConfig.latex,
         block.graphConfig.xAxisLabel,
