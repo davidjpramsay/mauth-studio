@@ -3,6 +3,37 @@ import test from "node:test";
 
 import { validateMauthDocumentActionPayloads } from "./mauthActionValidation.ts";
 
+test("statistics axis orientation accepts only horizontal and vertical in settings and chart data", () => {
+  for (const key of ["xLabelOrientation", "yLabelOrientation"]) {
+    for (const value of ["horizontal", "vertical", "diagonal", 90, null]) {
+      const expected = value === "horizontal" || value === "vertical";
+      const settings = { renderer: "statsChart", [key]: value };
+      assert.equal(
+        validateMauthDocumentActionPayloads([
+          {
+            type: "diagram.settings.update",
+            scope: { kind: "question", questionId: "q1" },
+            blockId: "d1",
+            settings,
+          },
+        ]).ok,
+        expected,
+      );
+      assert.equal(
+        validateMauthDocumentActionPayloads([
+          {
+            type: "diagram.update",
+            scope: { kind: "question", questionId: "q1" },
+            blockId: "d1",
+            graphConfig: { type: "statsChart", data: { chartType: "blankAxes", [key]: value } },
+          },
+        ]).ok,
+        expected,
+      );
+    }
+  }
+});
+
 test("shared diagram titles and captions accept text and reject malformed payloads", () => {
   for (const type of ["graph2d", "statsChart"]) {
     const action = {

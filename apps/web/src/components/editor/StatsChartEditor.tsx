@@ -235,17 +235,19 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
               </label>
             </>
           ) : null}
-          <label className="flex flex-col gap-2 text-xs font-medium">
-            Y label
-            <select
-              value={histogramYLabelOrientation}
-              onChange={(event) => updateData({ yLabelOrientation: event.target.value as StatsChartData["yLabelOrientation"] })}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-            >
-              <option value="vertical">Vertical</option>
-              <option value="horizontal">Horizontal</option>
-            </select>
-          </label>
+          {showInlineSettings ? (
+            <label className="flex flex-col gap-2 text-xs font-medium">
+              Y label
+              <select
+                value={histogramYLabelOrientation}
+                onChange={(event) => updateData({ yLabelOrientation: event.target.value as StatsChartData["yLabelOrientation"] })}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
+              >
+                <option value="vertical">Vertical</option>
+                <option value="horizontal">Horizontal</option>
+              </select>
+            </label>
+          ) : null}
         </section>
       ) : null}
 

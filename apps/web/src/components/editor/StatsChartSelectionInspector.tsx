@@ -85,6 +85,29 @@ export function StatsChartSelectionInspector({
           />
         </label>
       </div>
+      <div className="border-t pt-3">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Axis labels</div>
+        <div className="grid grid-cols-2 gap-2">
+          {(["x", "y"] as const).map((axis) => {
+            const key = axis === "x" ? "xLabelOrientation" : "yLabelOrientation";
+            return (
+              <label key={axis} className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+                {axis.toUpperCase()}-axis label
+                <select
+                  aria-label={`${selectedBlock.label} ${axis}-axis label orientation`}
+                  value={selection.spec.data[key] ?? (axis === "x" ? "horizontal" : "vertical")}
+                  disabled={axis === "y" && selection.spec.data.chartType === "box"}
+                  onChange={(event) => updateData({ [key]: event.target.value as StatsChartData[typeof key] })}
+                  className={controlClassName}
+                >
+                  <option value="horizontal">Horizontal</option>
+                  <option value="vertical">Vertical</option>
+                </select>
+              </label>
+            );
+          })}
+        </div>
+      </div>
       <label className={checkboxLabelClassName}>
         <input
           type="checkbox"

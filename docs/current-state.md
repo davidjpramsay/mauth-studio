@@ -52,8 +52,12 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; blank-axes controls are installed and verified in the native app; attached figure titles are saved in both tests
+worktree: clean at this checkpoint; axis-label orientation is verified in source and browser/print; final local installation checkpoint pending
 ```
+
+### 2 November Axis Label Orientation
+
+Statistics-chart Settings now exposes an independent Horizontal/Vertical choice for the x-axis and y-axis labels. The existing histogram-only y setting also works for scatterplots on blank axes, normal/binomial charts and density curves. Defaults preserve existing graphs. Box plots retain no y-axis label and disable that unused control. Prose and automatic/delimited mathematics keep their existing typography in either direction. Rotated x labels reserve their measured natural width and tick clearance below the plot. The new horizontal x default stays implicit when opening legacy charts, avoiding an incidental recovery-document migration. Focused agent settings and validators preserve coordinates, series, hidden solutions, ranges and figure text. Full `pnpm check` passes with 139 API, 755 web/action, 13 Plotly and the existing lifecycle, Penrose, launcher and Quick Look suites. Six browser checks pass at 1440/900 px, covering orientation controls, automatic and delimited mathematics, unchanged observations and hidden solutions, undo/redo, reopening, label bounds, tick clearance, attached figure text and Student/Solutions print. Browser plugin not available; the repository Playwright fixtures intercept every API route and remain isolated from teacher storage. Screenshots were visually inspected. Final local installation and recovery verification are pending.
 
 ### 2 November Blank-Axes Data Controls
 

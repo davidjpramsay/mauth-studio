@@ -298,7 +298,8 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
   const barType =
     selectedChartType === "histogram" && dataMode !== "manualProbabilities" ? histogramBarType(sourceData.barType) : "discrete";
   const yAxisMode = selectedChartType === "histogram" ? statsChartYAxisMode(sourceData.yAxisMode) : "frequency";
-  const yLabelOrientation = selectedChartType === "histogram" ? statsChartYLabelOrientation(sourceData.yLabelOrientation) : "vertical";
+  const xLabelOrientation = sourceData.xLabelOrientation === "vertical" ? "vertical" : "horizontal";
+  const yLabelOrientation = statsChartYLabelOrientation(sourceData.yLabelOrientation);
   const manualProbabilities = pairedManualProbabilityValues(sourceData);
   const densityPoints = densityPointPairs(sourceData);
   const defaultRange =
@@ -318,6 +319,7 @@ export function normalizeStatsChartSpec(source?: GraphConfig | StatsChartSpec | 
       barType,
       dataMode,
       yAxisMode,
+      ...(sourceData.xLabelOrientation === undefined ? {} : { xLabelOrientation }),
       yLabelOrientation,
       values: numberArray(sourceData.values, defaultValues),
       xValues: selectedChartType === "density" ? densityPoints.xs : manualProbabilities.xValues,
@@ -975,7 +977,10 @@ function chartTraces(spec: StatsChartSpec) {
   return [...statsChartRegionTraces(spec), ...baseChartTraces(spec), ...supplementalSeriesTraces(spec.data)];
 }
 
-export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec | null): PlotlyChartConfig {
+export function buildStatsChartPlotlyConfig(
+  input?: GraphConfig | StatsChartSpec | null,
+  axisLabelMeasurements?: { xLabelWidth: number },
+): PlotlyChartConfig {
   const spec = normalizeStatsChartSpec(input);
   const options = spec.options ?? {};
   const data = spec.data;
@@ -984,7 +989,10 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
   const showGrid = options.showGrid ?? true;
   const fontSizePx = (positiveNumber(options.fontSizePt, TEST_TEXT_FONT_SIZE_PT) * 4) / 3;
   const histogram = data.chartType === "histogram" ? histogramBarData(data) : undefined;
-  const horizontalYLabel = data.chartType === "histogram" && data.yLabelOrientation === "horizontal" && Boolean(data.yLabel?.trim());
+  const horizontalYLabel = data.chartType !== "box" && data.yLabelOrientation === "horizontal" && Boolean(data.yLabel?.trim());
+  const verticalXLabel = data.xLabelOrientation === "vertical" && Boolean(data.xLabel?.trim());
+  const xAxisTitle = verticalXLabel ? "" : (data.xLabel ?? "");
+  const yAxisTitle = horizontalYLabel ? "" : (data.yLabel ?? "");
   const binomial = data.chartType === "binomial" ? binomialDistributionPoints(data.trials, data.probability) : undefined;
   const normal =
     data.chartType === "normal"
@@ -1025,7 +1033,7 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
         l: data.chartType === "box" || !data.yLabel?.trim() ? 54 : horizontalYLabel ? 60 : 78,
         r: 26,
         t: data.title ? (horizontalYLabel ? 58 : 42) : horizontalYLabel ? 34 : 20,
-        b: 54,
+        b: verticalXLabel ? Math.max(54, Math.ceil((axisLabelMeasurements?.xLabelWidth ?? 60) + 44)) : 54,
       },
       paper_bgcolor: "#ffffff",
       plot_bgcolor: "#ffffff",
@@ -1034,14 +1042,14 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
       xaxis:
         data.chartType === "binomial"
           ? {
-              ...baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
+              ...baseAxis(showGrid, xAxisTitle, fontSizePx),
               range: [-0.5, (data.trials ?? 10) + 0.5],
               tickmode: "linear",
               dtick: 1,
             }
           : data.chartType === "histogram"
             ? {
-                ...baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
+                ...baseAxis(showGrid, xAxisTitle, fontSizePx),
                 range: histogram?.range,
                 ...(histogram
                   ? {
@@ -1052,16 +1060,16 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
               }
             : data.chartType === "normal"
               ? {
-                  ...baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
+                  ...baseAxis(showGrid, xAxisTitle, fontSizePx),
                   range: data.range,
                   ...normalXAxisTicks,
                 }
               : data.chartType === "density" || data.chartType === "blankAxes"
                 ? {
-                    ...baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
+                    ...baseAxis(showGrid, xAxisTitle, fontSizePx),
                     range: data.range,
                   }
-                : baseAxis(showGrid, data.xLabel ?? "", fontSizePx),
+                : baseAxis(showGrid, xAxisTitle, fontSizePx),
       yaxis:
         data.chartType === "box"
           ? {
@@ -1071,29 +1079,29 @@ export function buildStatsChartPlotlyConfig(input?: GraphConfig | StatsChartSpec
             }
           : data.chartType === "histogram"
             ? {
-                ...baseAxis(showGrid, horizontalYLabel ? "" : (data.yLabel ?? ""), fontSizePx),
+                ...baseAxis(showGrid, yAxisTitle, fontSizePx),
                 ...histogramYAxis,
                 rangemode: "tozero",
               }
             : data.chartType === "binomial"
               ? {
-                  ...baseAxis(showGrid, data.yLabel ?? "", fontSizePx),
+                  ...baseAxis(showGrid, yAxisTitle, fontSizePx),
                   ...binomialYAxis,
                   rangemode: "tozero",
                 }
               : data.chartType === "normal"
                 ? {
-                    ...baseAxis(showGrid, data.yLabel ?? "", fontSizePx),
+                    ...baseAxis(showGrid, yAxisTitle, fontSizePx),
                     ...normalYAxis,
                     rangemode: "tozero",
                   }
                 : data.chartType === "density" || data.chartType === "blankAxes"
                   ? {
-                      ...baseAxis(showGrid, data.yLabel ?? "", fontSizePx),
+                      ...baseAxis(showGrid, yAxisTitle, fontSizePx),
                       ...densityYAxis,
                       rangemode: "tozero",
                     }
-                  : baseAxis(showGrid, data.yLabel ?? "", fontSizePx),
+                  : baseAxis(showGrid, yAxisTitle, fontSizePx),
     },
     config: {
       staticPlot: !(options.interactive ?? false),

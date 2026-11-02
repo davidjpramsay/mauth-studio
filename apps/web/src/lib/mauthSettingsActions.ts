@@ -309,6 +309,8 @@ interface Graph3DElementSettingsUpdate extends Record<string, unknown> {
 }
 
 interface StatsChartSettingsUpdate extends SizedSettingsUpdate {
+  xLabelOrientation?: StatsChartData["xLabelOrientation"];
+  yLabelOrientation?: StatsChartData["yLabelOrientation"];
   chartType?: StatsChartData["chartType"];
   showGrid?: boolean;
   showFill?: boolean;
@@ -1001,6 +1003,8 @@ function statsChartBaseSettingsPatch(config: GraphConfig, settings: StatsChartSe
   const dataPatch: Partial<StatsChartData> = {};
   const optionsPatch: Partial<StatsChartOptions> = {};
   setIfDefined(dataPatch, "chartType", settings.chartType);
+  setIfDefined(dataPatch, "xLabelOrientation", settings.xLabelOrientation);
+  setIfDefined(dataPatch, "yLabelOrientation", settings.yLabelOrientation);
   setIfDefined(
     optionsPatch,
     "widthPx",
