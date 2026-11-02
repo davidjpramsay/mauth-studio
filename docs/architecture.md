@@ -329,6 +329,8 @@ Rendering systems remain separate by design:
 
 JSXGraph is pinned to 1.12.2 with a pnpm patch that backports the upstream print-media listener cleanup to the ESM renderer used by Mauth. The same bound callback and media-query objects are retained for removal when a board is freed. Keep the repeated-copy/print regression passing; evaluate broader upgrades against camera rotation, hidden edges and print baselines. A pending idle camera save is cancelled when a 3D pointer gesture begins, so it cannot remount the view during that gesture.
 
+A terminal question-level End of Test text marker renders as a page-level footer, outside question groups and their positioned editor selection frames. Its block remains the optional authoring source, so legacy documents require no migration. Measurement reserves its existing height, and pagination keeps the footer with the final content block while preserving explicit breaks and reporting oversized content. Preview and print share this path.
+
 Ordinary JSXGraph labels share the document's Inter font stack through escaped HTML; mathematical runs and axis numbers retain MathJax. Function/geometry and vector frames reserve at least 24 paper-size pixels independently of axis visibility, retaining larger existing reserves. These are presentation changes and do not rewrite authored coordinates or label offsets.
 
 Do not move Plotly or Penrose behavior into JSXGraph or React-only overlays. Solution graph annotations should be stored as editable diagram features, not one-off SVG markup.

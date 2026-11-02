@@ -14,6 +14,7 @@ import {
   groupPreviewPageSegments,
   investigationPreviewPageCount,
   isEndOfTestMarkerText,
+  isEndOfTestMarkerSegment,
   pagesAreEqual,
   previewPaginationReportsEqual,
   previewReadinessWarnings,
@@ -152,6 +153,32 @@ test("isEndOfTestMarkerText recognises only the dedicated final marker", () => {
   assert.equal(isEndOfTestMarkerText(" End of Test! "), true);
   assert.equal(isEndOfTestMarkerText("This is the end of the test."), false);
   assert.equal(isEndOfTestMarkerText("End of examination"), false);
+});
+
+const endOfTestSegment = { kind: "question-block", spacingTop: 0, block: { kind: "text", text: "**End of Test**" } };
+
+test("a terminal End of Test footer stays with the last content block instead of becoming an orphan page", () => {
+  assert.equal(isEndOfTestMarkerSegment(endOfTestSegment), true);
+  assert.equal(isEndOfTestMarkerSegment({ kind: "part-group" }), false);
+  const segments = [{ kind: "question-start" }, { kind: "part-group" }, endOfTestSegment];
+  assert.deepEqual(buildMeasuredPages([60, 30, 20], segments, compactPageFormat), [
+    { segmentIndexes: [0], overflow: false },
+    { segmentIndexes: [1, 2], overflow: false },
+  ]);
+  assert.deepEqual(buildMeasuredPages([60, 30, 20, 0], [...segments, { kind: "page-break" }], compactPageFormat), [
+    { segmentIndexes: [0], overflow: false },
+    { segmentIndexes: [1, 2], overflow: false },
+  ]);
+});
+
+test("footer pagination preserves explicit breaks and reports a content block that cannot fit with its footer", () => {
+  assert.deepEqual(buildMeasuredPages([120, 20], [{ kind: "part-group" }, endOfTestSegment], compactPageFormat), [
+    { segmentIndexes: [0, 1], overflow: true },
+  ]);
+  assert.deepEqual(buildMeasuredPages([60, 0, 20], [{ kind: "part-group" }, { kind: "page-break" }, endOfTestSegment], compactPageFormat), [
+    { segmentIndexes: [0], overflow: false },
+    { segmentIndexes: [2], overflow: false },
+  ]);
 });
 
 test("exam reserved question-page height is only used for exam booklets", () => {

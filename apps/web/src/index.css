@@ -2143,7 +2143,7 @@
     position: relative;
   }
 
-  .a4-page-with-end-of-test .test-end-of-test-segment {
+  .a4-page-with-end-of-test .test-end-of-test-footer {
     bottom: 0;
     left: 0;
     position: absolute;
@@ -2151,7 +2151,7 @@
     text-align: center;
   }
 
-  .school-exam-question-page.a4-page-with-end-of-test .test-end-of-test-segment {
+  .school-exam-question-page.a4-page-with-end-of-test .test-end-of-test-footer {
     bottom: 1.6rem;
   }
 

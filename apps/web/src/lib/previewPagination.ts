@@ -38,6 +38,7 @@ export interface PreviewReadinessWarning {
 export interface PreviewPaginationSegmentLike {
   kind: string;
   spacingTop?: number;
+  block?: { kind: string; text?: string };
 }
 
 export interface PreviewQuestionLike {
@@ -176,6 +177,10 @@ export function isEndOfTestMarkerText(text?: string) {
   return normalized === "end of test";
 }
 
+export function isEndOfTestMarkerSegment(segment?: PreviewPaginationSegmentLike) {
+  return segment?.kind === "question-block" && segment.block?.kind === "text" && isEndOfTestMarkerText(segment.block.text);
+}
+
 export function investigationPreviewPageCount(showTeacherCopy: boolean, criterionCount = 0, studentPageCount = 1) {
   if (!showTeacherCopy) return studentPageCount;
   const rubricPageCount = Math.max(1, Math.ceil(criterionCount / INVESTIGATION_RUBRIC_CRITERIA_PER_PAGE));
@@ -211,6 +216,10 @@ export function buildMeasuredPages(
   if (!segmentHeights.length) return [{ segmentIndexes: [], overflow: false }];
 
   const contentHeight = pageFormat.heightPx - pageFormat.paddingYPx * 2 - reservedPageHeight;
+  let lastContentIndex = segments.length - 1;
+  while (lastContentIndex >= 0 && segments[lastContentIndex].kind === "page-break") lastContentIndex -= 1;
+  const footerIndex = isEndOfTestMarkerSegment(segments[lastContentIndex]) ? lastContentIndex : -1;
+  const footerHeight = footerIndex >= 0 ? segmentHeights[footerIndex] || 0 : 0;
   const pages: PreviewPage[] = [];
   let currentSegmentIndexes: number[] = [];
   let currentHeight = 0;
@@ -229,10 +238,19 @@ export function buildMeasuredPages(
       if (currentSegmentIndexes.length) pushCurrentPage();
       return;
     }
+    // Keep a terminal footer with the last real content block. An explicit page
+    // break remains authoritative, and an oversized block still reports overflow.
+    if (segmentIndex === footerIndex && currentSegmentIndexes.length) {
+      currentSegmentIndexes.push(segmentIndex);
+      currentHeight += footerHeight;
+      currentOverflow = currentOverflow || currentHeight > contentHeight;
+      return;
+    }
+    const footerReserve = segmentIndex === footerIndex - 1 ? footerHeight : 0;
     const fullHeight = measuredHeight || 0;
     const pageTopHeight = Math.max(0, fullHeight - (segment?.spacingTop ?? 0));
     const effectiveHeight = currentSegmentIndexes.length ? fullHeight : pageTopHeight;
-    const proposedHeight = currentHeight + effectiveHeight;
+    const proposedHeight = currentHeight + effectiveHeight + footerReserve;
 
     if (currentSegmentIndexes.length && proposedHeight > contentHeight) {
       pushCurrentPage();
@@ -241,7 +259,7 @@ export function buildMeasuredPages(
     const heightOnPage = currentSegmentIndexes.length ? fullHeight : pageTopHeight;
     currentSegmentIndexes.push(segmentIndex);
     currentHeight += heightOnPage;
-    currentOverflow = currentOverflow || currentHeight > contentHeight;
+    currentOverflow = currentOverflow || currentHeight + footerReserve > contentHeight;
   });
 
   if (currentSegmentIndexes.length || !pages.length) {
