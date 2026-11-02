@@ -101,6 +101,8 @@ Before sharing a release, also test the downloaded artifact on a clean Apple Sil
 8. Confirm an unauthenticated request to `/api/agent/current/snapshot` is rejected.
 9. Quit and cold-launch the app, confirm the restrained loading state appears promptly, and verify it is replaced by the editor without a blank window or extra document tab.
 
+For local rebuilt-app checkpoints, also verify document listing through the installed connector, not only API health and an initial editor snapshot. macOS can require renewed Documents-folder permission after an ad-hoc code signature changes. A directory read may wait for that native prompt while health stays available; an agent request waiting on it can time out. Have the teacher answer the macOS prompt, preserve the selected folder and recovered drafts, then rerun the doctor and installed connector smoke. Do not reset privacy permissions or replace documents to clear the wait.
+
 ## Agent Authentication
 
 Every desktop launch generates a new random bridge token. The app:
