@@ -1,5 +1,5 @@
 import type { GraphConfig } from "@mauth-studio/shared";
-import { PlusCircle, Trash2 } from "lucide-react";
+import { PlusCircle, Shuffle, Trash2 } from "lucide-react";
 
 import { CollapsiblePanel } from "@/components/editor/EditorPanels";
 import { NumericExpressionInput } from "@/components/editor/NumericExpressionInput";
@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PENROSE_SCALE_PERCENT, penroseOptions, penroseScalePercent, removePenroseSubstanceOverride } from "@/lib/diagramPenrose";
-import { DEFAULT_NETWORK_DATA, normalizedNetworkDiagramData, penroseIdentifier, networkDataForSave } from "@/lib/diagramNetwork";
+import { normalizedNetworkDiagramData, penroseIdentifier, networkDataForSave } from "@/lib/diagramNetwork";
+import { penroseResamplePatch } from "@/lib/moduleSettingsPatches";
 import { penroseAuthoringLayer } from "@/lib/diagramPenroseSolution";
 
 type NetworkDiagramEditorProps = {
@@ -114,14 +115,6 @@ export function NetworkDiagramEditor({
       relationships: data.relationships.filter((_, index) => index !== relationshipIndex),
     });
   };
-  const useNetworkPreset = () => {
-    patchNetworkData({
-      hidePoints: false,
-      hidePointLabels: false,
-      objects: DEFAULT_NETWORK_DATA.objects.map((object) => ({ ...object, label: object.name })),
-      relationships: DEFAULT_NETWORK_DATA.relationships.map((relationship) => ({ ...relationship })),
-    });
-  };
   const updateSubstance = (value: string) =>
     onChange({
       options: { ...penroseOptions(config), substanceSource: value },
@@ -148,8 +141,15 @@ export function NetworkDiagramEditor({
           <Button type="button" variant="outline" className="self-end" onClick={() => updateScale(DEFAULT_PENROSE_SCALE_PERCENT)}>
             Original
           </Button>
-          <Button type="button" variant="outline" className="self-end" onClick={useNetworkPreset}>
-            Network preset
+          <Button
+            type="button"
+            variant="outline"
+            className="self-end"
+            title="Rearrange the same network, keeping weights and label adjustments"
+            onClick={() => onChange(penroseResamplePatch(config))}
+          >
+            <Shuffle className="mr-2 size-4" aria-hidden="true" />
+            Resample
           </Button>
         </div>
       ) : null}

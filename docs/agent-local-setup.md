@@ -36,9 +36,11 @@ The normal authoring loop is:
 ```text
 mauth_documents_list / mauth_document_create / mauth_document_open
 mauth_snapshot
+mauth_diagram_tools when creating or replacing a diagram
 mauth_actions_preview
 mauth_actions_apply
 mauth_validation_run
+mauth_diagrams_inspect after diagram edits, in both copies
 rendered Student and Solutions/Teacher verification
 mauth_document_close when deliberately finished
 ```
@@ -54,6 +56,7 @@ Agent actions pass through Mauth's editor history, autosave, validation, and rev
 - `SAVE_CONFLICT`: resolve or reload the active file in Mauth before retrying.
 - `UNSAVED_CHANGES`: save the tab, or explicitly choose discard only when that is intended.
 - `STORAGE_UNAVAILABLE`: reconnect or finish downloading the selected documents folder, then retry.
+- A newly added MCP tool is missing after updating Mauth: reconnect the MCP client to refresh its tool list. Existing snapshots still expose the diagram catalog, current tool names and recommendations.
 - Mauth moved or was reinstalled elsewhere: repeat **Help > Set Up Codex or Claude...**.
 
 Developers should clone the repository and follow `AGENTS.md` and `docs/current-state.md`. Technical connector details live in `docs/agent-bridge.md`; source diagnostics such as `pnpm agent:doctor` and `pnpm agent:mcp` are not end-user installation steps.

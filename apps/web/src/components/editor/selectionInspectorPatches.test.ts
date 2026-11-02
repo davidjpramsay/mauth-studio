@@ -21,7 +21,6 @@ import {
   imageDataPatch,
   imageSizePatch,
   inspectorSpaceLines,
-  networkPresetPatch,
   networkVisibilityPatch,
   penroseResamplePatch,
   penroseScalePatch,
@@ -282,7 +281,7 @@ test("module.update applies inspector diagram patches and preserves unrelated mo
   assert.equal(updatedGeometry?.kind === "diagram" ? updatedGeometry.graphConfig.scalePercent : undefined, 125);
   assert.equal(updatedGeometry?.kind === "diagram" ? updatedGeometry.graphConfig.options?.variation : undefined, "fixed-layout");
 
-  networkConfig = mergeGraphConfig(networkConfig, networkPresetPatch(networkConfig));
+  networkConfig = mergeGraphConfig(networkConfig, penroseResamplePatch(networkConfig, "new-network-layout"));
   questions = updateQuestionModule(questions, "network", { graphConfig: networkConfig });
   networkConfig = mergeGraphConfig(networkConfig, networkVisibilityPatch(networkConfig, { hidePoints: true, hidePointLabels: true }));
   questions = updateQuestionModule(questions, "network", { graphConfig: networkConfig });
@@ -383,16 +382,6 @@ test("network inspector patches save structured data and remove stale Substance 
   assert.equal((hiddenDots.data as typeof DEFAULT_NETWORK_DATA).hidePointLabels, false);
   assert.equal(hiddenDots.widthPx, undefined);
   assert.equal(hiddenDots.heightPx, undefined);
-
-  const preset = networkPresetPatch(config);
-  const presetData = preset.data as typeof DEFAULT_NETWORK_DATA;
-  assert.equal(presetData.hidePoints, false);
-  assert.equal(presetData.hidePointLabels, false);
-  assert.deepEqual(
-    presetData.objects.map((object) => object.label),
-    ["A", "B", "C"],
-  );
-  assert.equal(presetData.relationships.length, DEFAULT_NETWORK_DATA.relationships.length);
 });
 
 test("set diagram helper patches update labels, totals, and shading", () => {

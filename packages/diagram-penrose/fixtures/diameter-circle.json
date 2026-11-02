@@ -1,0 +1,24 @@
+{
+  "student": {
+    "type": "geometricConstruction",
+    "style": "geometry",
+    "data": {},
+    "options": {
+      "penrosePreset": "geometry",
+      "scalePercent": 200,
+      "variation": "showcase-circle-20261028",
+      "substanceSource": "Point O, A, B, C\nCircle omega\nNamedSegment AB, AC, BC, OC\nLengthLabel diameter\nCircleThrough(omega, O, A)\nOnCircle(B, omega)\nOnCircle(C, omega)\nMidpoint(O, A, B)\nEqualLength(A, C, B, C)\nHorizontal(A, B)\nAbove(C, O)\nSegment(AB, A, B)\nSegment(AC, A, C)\nSegment(BC, B, C)\nSegment(OC, O, C)\nDashedSegment(OC)\nLabel omega $\\,$\nLabel O $O$\nLabel A $A$\nLabel B $B$\nLabel C $C$\nLabel diameter $8\\text{ cm}$\nLabelsSegmentBelow(diameter, A, B)\nLabelLeft(A)\nLabelRight(B)\nLabelAbove(C)\nLabelBelow(O)"
+    }
+  },
+  "solution": {
+    "type": "geometricConstruction",
+    "style": "geometry",
+    "data": {},
+    "options": {
+      "penrosePreset": "geometry",
+      "scalePercent": 160,
+      "variation": "showcase-circle-20261028",
+      "substanceSource": "Point O, A, B, C\nCircle omega\nNamedSegment AB, AC, BC, OC\nLengthLabel diameter\nCircleThrough(omega, O, A)\nOnCircle(B, omega)\nOnCircle(C, omega)\nMidpoint(O, A, B)\nEqualLength(A, C, B, C)\nHorizontal(A, B)\nAbove(C, O)\nSegment(AB, A, B)\nSegment(AC, A, C)\nSegment(BC, B, C)\nSegment(OC, O, C)\nDashedSegment(OC)\nLabel omega $\\,$\nLabel O $O$\nLabel A $A$\nLabel B $B$\nLabel C $C$\nLabel diameter $8\\text{ cm}$\nLabelsSegmentBelow(diameter, A, B)\nLabelLeft(A)\nLabelRight(B)\nLabelAbove(C)\nLabelBelow(O)\nLengthLabel answerAngle\nLabel answerAngle $45^\\circ$\nLabelsAngle(answerAngle, C, A, B)\nSolutionLengthLabel(answerAngle)\nSolutionAngleMark(C, A, B)\nSolutionRightAngle(A, C, B)"
+    }
+  }
+}

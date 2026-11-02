@@ -626,9 +626,44 @@ function vector2dRawElementLists(config: GraphConfig) {
   return {
     metadata,
     vector2d,
-    vectors: Array.isArray(vector2d.vectors) ? vector2d.vectors : [],
+    vectors: Array.isArray(vector2d.vectors) ? vector2d.vectors : Array.isArray(metadata.vectors) ? metadata.vectors : [],
     segmentLabels: Array.isArray(vector2d.segmentLabels) ? vector2d.segmentLabels : [],
     angleMarkers: Array.isArray(vector2d.angleMarkers) ? vector2d.angleMarkers : [],
+  };
+}
+
+function vector2dRawElementId(entry: Record<string, unknown>, kind: Vector2DElementKind, index: number) {
+  if (kind === "vector") {
+    const fallback = DEFAULT_VECTOR_2D_METADATA.vector2d.vectors[index % DEFAULT_VECTOR_2D_METADATA.vector2d.vectors.length];
+    return String(entry.id ?? entry.name ?? fallback.name);
+  }
+  return String(entry.id ?? `${kind === "segmentLabel" ? "segment-label" : "angle-marker"}-${index + 1}`);
+}
+
+export function vector2dConfigWithLabelPosition(
+  config: GraphConfig,
+  kind: Vector2DElementKind,
+  id: string,
+  x: number,
+  y: number,
+): GraphConfig {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return config;
+  const lists = vector2dRawElementLists(config);
+  const listKey = VECTOR_2D_ELEMENT_LIST_KEYS[kind];
+  const entries = lists[listKey].length || kind !== "vector" ? lists[listKey] : normalizedVector2DEntries(config);
+  const target = entries.findIndex((entry, index) => vector2dRawElementId(asRecord(entry) ?? {}, kind, index) === id);
+  if (target < 0) return config;
+  return {
+    ...config,
+    metadata: {
+      ...lists.metadata,
+      vector2d: {
+        ...lists.vector2d,
+        [listKey]: entries.map((entry, index) =>
+          index === target ? { ...asRecord(entry), labelX: Number(x.toFixed(6)), labelY: Number(y.toFixed(6)) } : entry,
+        ),
+      },
+    } as GraphMetadata,
   };
 }
 
@@ -643,22 +678,29 @@ export function vector2dConfigHasSolutionOnly(config: GraphConfig) {
 export function vector2dConfigForSolutionVisibility(config: GraphConfig, showSolutions: boolean, solutionColor?: string): GraphConfig {
   if (!vector2dConfigHasSolutionOnly(config)) return config;
   const lists = vector2dRawElementLists(config);
-  const visibleList = (entries: unknown[]) =>
-    showSolutions
+  const visibleList = (source: unknown[], kind: Vector2DElementKind) => {
+    // Derive missing ids before filtering so a hidden earlier row cannot change
+    // which full-document element receives a label edit.
+    const entries = source.map((entry, index) => {
+      const record = asRecord(entry);
+      return record && record.id == null ? { ...record, id: vector2dRawElementId(record, kind, index) } : entry;
+    });
+    return showSolutions
       ? entries.map((entry) => {
           const record = asRecord(entry);
           return record?.solutionOnly === true && solutionColor ? { ...record, color: solutionColor } : entry;
         })
       : entries.filter((entry) => asRecord(entry)?.solutionOnly !== true);
+  };
   return {
     ...config,
     metadata: {
       ...lists.metadata,
       vector2d: {
         ...lists.vector2d,
-        vectors: visibleList(lists.vectors),
-        segmentLabels: visibleList(lists.segmentLabels),
-        angleMarkers: visibleList(lists.angleMarkers),
+        vectors: visibleList(lists.vectors, "vector"),
+        segmentLabels: visibleList(lists.segmentLabels, "segmentLabel"),
+        angleMarkers: visibleList(lists.angleMarkers, "angleMarker"),
       },
     } as GraphMetadata,
   };

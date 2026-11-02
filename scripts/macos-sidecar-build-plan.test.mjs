@@ -13,4 +13,5 @@ test("macOS sidecar uses a directory bundle with a nested executable", () => {
   assert.equal(plan.sidecarRoot, path.join(root, "tmp", "macos", "mauth-api"));
   assert.equal(plan.executable, path.join(plan.sidecarRoot, "mauth-api"));
   assert.equal(plan.cwd, path.join(root, "apps", "api"));
+  assert.ok(plan.args.includes(path.join(root, "packages", "math-parser")));
 });

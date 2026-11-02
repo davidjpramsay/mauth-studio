@@ -1770,6 +1770,10 @@ export default function App() {
                   scale: previewLayoutScale,
                   showSolutions: previewShowSolutions,
                   onGraphConfigChange: handlePreviewGraphConfigChange,
+                  onInvestigationGraphConfigChange: (anchor, graphConfig) => {
+                    const selection = selectedInvestigationDiagramFromAnchor(frontMatterRef.current.investigation, anchor);
+                    if (selection) workspaceContentMutationController.updateSelectedBlock(selection, { graphConfig });
+                  },
                   onPaginationReport: previewReadinessController.onPaginationReport,
                 }}
               />

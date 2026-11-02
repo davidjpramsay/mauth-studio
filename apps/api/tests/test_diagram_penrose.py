@@ -1,3 +1,8 @@
+import math
+import re
+from xml.etree import ElementTree
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -127,6 +132,22 @@ def test_penrose_variation_resamples_geometry_layout():
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json()["svg"] != second.json()["svg"]
+
+
+def test_penrose_rejects_unsatisfied_geometry_without_returning_svg():
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            "type": "geometricConstruction",
+            "options": {
+                "substanceSource": "Point A, B\nHorizontal(A, B)\nHorizontal(B, A)",
+                "variation": "contradictory",
+            },
+        },
+    )
+    assert response.status_code == 500
+    assert "No layout satisfying the geometry constraints" in response.json()["detail"]
+    assert "svg" not in response.json()
 
 
 def test_penrose_diagram_uses_original_canvas_and_test_text_labels():
@@ -668,8 +689,8 @@ def test_penrose_set_diagram_supports_smooth_shading_and_count_badges():
     assert 'font-size="23"' not in data["svg"]
     assert " Z" not in data["svg"].split('data-badge-kind="left-tab"', 1)[1].split("</g>", 1)[0]
     assert " Z" not in data["svg"].split('data-badge-kind="right-tab"', 1)[1].split("</g>", 1)[0]
-    assert data["metadata"]["displayWidth"] == 336
-    assert data["metadata"]["displayHeight"] == 240
+    assert data["metadata"]["displayWidth"] == pytest.approx(326.4)
+    assert data["metadata"]["displayHeight"] == pytest.approx(230.4)
     assert 'x="126" y="150"' in data["svg"]
     assert 'x="210" y="150"' in data["svg"]
     assert 'x="294" y="150"' in data["svg"]
@@ -706,6 +727,72 @@ def test_penrose_set_diagram_supports_smooth_shading_and_count_badges():
     assert 'x="323.982" y="150"' in scaled_svg
 
 
+@pytest.mark.parametrize("blank", [False, True])
+def test_three_set_totals_use_curved_tabs_and_keep_the_universe_box(blank):
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            **SET_SPEC,
+            "data": {
+                "setCount": 3,
+                "universe": {"name": "U", "countLabel": "40", "countBlank": blank},
+                "sets": [
+                    {"name": "M", "label": "M", "countLabel": "22", "countBlank": blank},
+                    {"name": "A", "label": "A", "countLabel": "20", "countBlank": blank},
+                    {"name": "C", "label": "C", "countLabel": "18", "countBlank": blank},
+                ],
+            },
+        },
+    )
+    assert response.status_code == 200
+    root = ElementTree.fromstring(response.json()["svg"])
+    namespace = {"s": "http://www.w3.org/2000/svg"}
+    badges = {
+        node.get("data-badge-kind"): node for node in root.findall("s:g[@data-role='set-count-badge']", namespace)
+    }
+    assert set(badges) == {"box", "left-tab", "right-tab", "bottom-tab"}
+    for kind, value in [("box", "40"), ("left-tab", "22"), ("right-tab", "20"), ("bottom-tab", "18")]:
+        text = badges[kind].find("s:text", namespace)
+        assert (text.text or "") == ("" if blank else value)
+        if kind != "box":
+            assert badges[kind].find("s:rect", namespace) is None
+            assert badges[kind].find("s:path", namespace) is not None
+    assert [node.text for node in root.findall("s:text", namespace)][:3] == ["M", "A", "C"]
+    assert all(node.text != "U" for node in root.findall(".//s:text", namespace))
+
+
+def test_three_set_overlap_values_are_at_region_area_centres():
+    names = ["onlyA", "onlyB", "onlyC", "onlyAB", "onlyAC", "onlyBC", "intersection", "outside"]
+    response = client.post(
+        "/api/diagram/penrose",
+        json={
+            **SET_SPEC,
+            "data": {"setCount": 3, "regions": [{"name": name, "label": str(i)} for i, name in enumerate(names)]},
+        },
+    )
+    assert response.status_code == 200
+    root = ElementTree.fromstring(response.json()["svg"])
+    ns = {"s": "http://www.w3.org/2000/svg"}
+    circles = [(float(c.get("cx")), float(c.get("cy")), float(c.get("r"))) for c in root.findall("s:circle", ns)]
+    positions = {names[int(t.text)]: (float(t.get("x")), float(t.get("y"))) for t in root.findall("s:text", ns)[3:]}
+
+    # Independently integrate the rendered regions on a unit grid. This catches
+    # misplaced anchors without duplicating the renderer's coordinate table.
+    samples = {mask: [] for mask in (3, 5, 6, 7)}
+    for x in range(88, 332):
+        for y in range(52, 266):
+            point = (x + 0.5, y + 0.5)
+            mask = sum(
+                1 << i for i, (cx, cy, r) in enumerate(circles) if (point[0] - cx) ** 2 + (point[1] - cy) ** 2 < r**2
+            )
+            if mask in samples:
+                samples[mask].append(point)
+    for name, mask in [("onlyAB", 3), ("onlyAC", 5), ("onlyBC", 6), ("intersection", 7)]:
+        points = samples[mask]
+        centroid = tuple(sum(p[axis] for p in points) / len(points) for axis in (0, 1))
+        assert positions[name] == pytest.approx(centroid, abs=1)
+
+
 def test_penrose_geometry_preset_draws_repeated_ticks_and_angle_arcs():
     response = client.post(
         "/api/diagram/penrose",
@@ -738,6 +825,20 @@ def test_penrose_geometry_preset_draws_repeated_ticks_and_angle_arcs():
     assert "tickSecond" in data["svg"]
     assert "angleArc" in data["svg"]
     assert "\\theta" not in data["svg"]
+    root = ElementTree.fromstring(data["svg"])
+    namespace = {"s": "http://www.w3.org/2000/svg"}
+    ticks = [
+        p
+        for p in root.findall(".//s:path", namespace)
+        if "tickFirst" in (p.findtext("s:title", namespaces=namespace) or "")
+    ]
+    assert ticks
+    for tick in ticks:
+        coordinates = [float(v) for v in re.findall(r"[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?", tick.get("d"), re.I)]
+        assert len(coordinates) == 8  # two independent equality strokes
+        for index in (0, 4):
+            x1, y1, x2, y2 = coordinates[index : index + 4]
+            assert math.hypot(x2 - x1, y2 - y1) == pytest.approx(10.5, abs=0.01)
 
 
 def test_geometry_question_embeds_geometric_diagram():

@@ -1,4 +1,7 @@
 import { Fragment, type CSSProperties } from "react";
+import type { GraphConfig } from "@mauth-studio/shared";
+
+type InvestigationGraphChange = (anchor: string, config: GraphConfig) => void;
 
 import { FormattedText, FrontMatterInlineText } from "@/components/MathText";
 import { TestFrontMatterPreview } from "@/components/preview/FrontMatterPreviewPages";
@@ -30,10 +33,12 @@ function InvestigationDiagramGallery({
   diagrams,
   pageId,
   activePreviewAnchor,
+  onGraphConfigChange,
 }: {
   diagrams: InvestigationDiagramConfig[];
   pageId: string;
   activePreviewAnchor?: string;
+  onGraphConfigChange?: InvestigationGraphChange;
 }) {
   if (!diagrams.length) return null;
   return (
@@ -53,7 +58,12 @@ function InvestigationDiagramGallery({
               <FrontMatterInlineText text={diagram.title} />
             </h3>
             <div className="investigation-diagram-surface">
-              <PreviewDiagram graphConfig={diagram.graphConfig} showSolutions={false} withGraphDefaults={withGraphDefaults} />
+              <PreviewDiagram
+                graphConfig={diagram.graphConfig}
+                showSolutions={false}
+                withGraphDefaults={withGraphDefaults}
+                onGraphConfigChange={onGraphConfigChange ? (config) => onGraphConfigChange(anchor, config) : undefined}
+              />
             </div>
             {diagram.caption ? (
               <figcaption>
@@ -91,10 +101,12 @@ function InvestigationPageContents({
   investigation,
   page,
   activePreviewAnchor,
+  onGraphConfigChange,
 }: {
   investigation: InvestigationConfig;
   page: InvestigationStudentPageConfig;
   activePreviewAnchor?: string;
+  onGraphConfigChange?: InvestigationGraphChange;
 }) {
   const diagrams = investigation.diagrams.filter((diagram) => diagram.pageId === page.id);
   return (
@@ -118,7 +130,12 @@ function InvestigationPageContents({
           </section>
         );
       })}
-      <InvestigationDiagramGallery diagrams={diagrams} pageId={page.id} activePreviewAnchor={activePreviewAnchor} />
+      <InvestigationDiagramGallery
+        diagrams={diagrams}
+        pageId={page.id}
+        activePreviewAnchor={activePreviewAnchor}
+        onGraphConfigChange={onGraphConfigChange}
+      />
     </div>
   );
 }
@@ -129,12 +146,14 @@ function InvestigationStudentContinuation({
   page,
   showGuidance,
   activePreviewAnchor,
+  onGraphConfigChange,
 }: {
   frontMatter: FrontMatterConfig;
   investigation: InvestigationConfig;
   page: InvestigationStudentPageConfig;
   showGuidance: boolean;
   activePreviewAnchor?: string;
+  onGraphConfigChange?: InvestigationGraphChange;
 }) {
   const context = [frontMatter.subjectTitle, frontMatter.assessmentTitle, frontMatter.assessmentSubtitle].filter(Boolean).join(" · ");
   const pageAnchor = investigationPageScrollAnchor(page.id);
@@ -152,7 +171,12 @@ function InvestigationStudentContinuation({
       <h2>
         <FrontMatterInlineText text={page.title} />
       </h2>
-      <InvestigationPageContents investigation={investigation} page={page} activePreviewAnchor={activePreviewAnchor} />
+      <InvestigationPageContents
+        investigation={investigation}
+        page={page}
+        activePreviewAnchor={activePreviewAnchor}
+        onGraphConfigChange={onGraphConfigChange}
+      />
       {showGuidance ? <InvestigationGuidance investigation={investigation} /> : null}
     </section>
   );
@@ -260,6 +284,7 @@ export function InvestigationPreview({
   showSolutions,
   showPageBreaks,
   activePreviewAnchor,
+  onGraphConfigChange,
   style,
 }: {
   frontMatter: FrontMatterConfig;
@@ -267,6 +292,7 @@ export function InvestigationPreview({
   showSolutions: boolean;
   showPageBreaks: boolean;
   activePreviewAnchor?: string;
+  onGraphConfigChange?: InvestigationGraphChange;
   style?: CSSProperties;
 }) {
   const investigation = normalizeInvestigation(frontMatter.investigation);
@@ -304,6 +330,7 @@ export function InvestigationPreview({
                           investigation={investigation}
                           page={firstStudentPage}
                           activePreviewAnchor={activePreviewAnchor}
+                          onGraphConfigChange={onGraphConfigChange}
                         />
                       </section>
                       {studentPages.length === 1 ? <InvestigationGuidance investigation={investigation} /> : null}
@@ -329,6 +356,7 @@ export function InvestigationPreview({
                       page={page}
                       showGuidance={pageIndex === studentPages.length - 2}
                       activePreviewAnchor={activePreviewAnchor}
+                      onGraphConfigChange={onGraphConfigChange}
                     />
                   </div>
                 </section>

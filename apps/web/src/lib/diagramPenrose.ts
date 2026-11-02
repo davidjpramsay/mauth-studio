@@ -1,4 +1,6 @@
 import type { DiagramSpec, GraphConfig } from "@mauth-studio/shared";
+import { penroseLabelOffsets } from "../../../../packages/shared/src/penroseLabels.ts";
+export { penroseLabelOffsets, penroseSupportsLabelDragging } from "../../../../packages/shared/src/penroseLabels.ts";
 
 export const PENROSE_ORIGINAL_WIDTH = 420;
 export const DEFAULT_PENROSE_SCALE_PERCENT = 100;
@@ -75,4 +77,21 @@ export function penroseRenderRequest(graphConfig?: GraphConfig | null): DiagramS
     style: preset,
     options: penroseOptions(graphConfig),
   };
+}
+
+export function penroseLabelPositionPatch(config: GraphConfig, id: string, offset: [number, number] | null): Partial<GraphConfig> {
+  const labelOffsets = { ...penroseLabelOffsets(config.options?.labelOffsets) };
+  if (offset === null) delete labelOffsets[id];
+  else {
+    const valid = penroseLabelOffsets({ [id]: offset });
+    if (!valid[id]) return {};
+    labelOffsets[id] = offset.map((value) => Number(value.toFixed(6))) as [number, number];
+  }
+  return { options: { ...config.options, labelOffsets } };
+}
+
+export function penroseResetLabelPositionsPatch(config: GraphConfig): Partial<GraphConfig> {
+  const options = { ...config.options };
+  delete options.labelOffsets;
+  return { options };
 }

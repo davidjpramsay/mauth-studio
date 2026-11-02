@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.models.schemas import DiagramSpec, PenroseDiagramResponse
-from app.services.penrose import render_penrose_diagram
+from app.services.penrose import PenroseRendererBusy, PenroseRenderTimeout, render_penrose_diagram
 
 router = APIRouter()
 
@@ -12,5 +12,11 @@ def render_penrose(request: DiagramSpec) -> dict:
         return render_penrose_diagram(request.model_dump())
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    except PenroseRenderTimeout as error:
+        raise HTTPException(
+            status_code=504, detail={"code": "PENROSE_RENDER_TIMEOUT", "message": str(error)}
+        ) from error
+    except PenroseRendererBusy as error:
+        raise HTTPException(status_code=503, detail={"code": "PENROSE_RENDER_BUSY", "message": str(error)}) from error
     except RuntimeError as error:
         raise HTTPException(status_code=500, detail=str(error)) from error

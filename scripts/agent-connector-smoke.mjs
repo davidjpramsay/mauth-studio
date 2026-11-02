@@ -30,6 +30,8 @@ try {
   const toolNames = new Set(tools.tools.map((tool) => tool.name));
   for (const expected of [
     "mauth_snapshot",
+    "mauth_diagram_tools",
+    "mauth_diagrams_inspect",
     "mauth_actions_preview",
     "mauth_actions_apply",
     "mauth_validation_run",
@@ -44,6 +46,10 @@ try {
     assert.equal(tool.outputSchema?.type, "object", `Missing MCP output schema: ${tool.name}`);
     assert.equal(tool.annotations?.openWorldHint, false, `MCP tool must remain local-only: ${tool.name}`);
   }
+
+  const guide = await client.callTool({ name: "mauth_diagram_tools", arguments: { intent: "Circle theorem with a tangent and chord" } });
+  assert.equal(guide.structuredContent?.recommendation?.id, "geometricConstruction");
+  assert.equal(guide.structuredContent?.exampleGraphConfig?.type, "geometricConstruction");
 
   const snapshot = await client.callTool({ name: "mauth_snapshot", arguments: {} }, undefined, {
     signal: AbortSignal.timeout(30_000),

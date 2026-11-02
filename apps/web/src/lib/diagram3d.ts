@@ -15,6 +15,7 @@ export const DEFAULT_3D_GRAPH: GraphConfig = {
   heightPx: 320,
   functions: [],
   features: [],
+  data: { hiddenEdges: "auto" },
   metadata: {
     view3d: DEFAULT_3D_VIEW_STATE,
   },

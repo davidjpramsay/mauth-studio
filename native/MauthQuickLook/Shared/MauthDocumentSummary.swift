@@ -86,26 +86,54 @@ struct MauthDocumentSummary {
     let investigation = dictionary(frontMatter["investigation"])
     let criteria = arrayOfDictionaries(investigation["criteria"])
     if !criteria.isEmpty {
-      let total = criteria.reduce(0) { partial, criterion in
+      var totals: [Int] = []
+      for criterion in criteria {
         let marks = arrayOfDictionaries(criterion["allocations"]).compactMap {
           integer($0["marks"])
         }
-        return partial
-          + (string(criterion["scoringMode"]) == "additive"
-            ? marks.reduce(0, +) : (marks.max() ?? 0))
+        if string(criterion["scoringMode"]) == "additive" {
+          guard let total = checkedSum(marks) else { return nil }
+          totals.append(total)
+        } else {
+          totals.append(marks.max() ?? 0)
+        }
       }
+      guard let total = checkedSum(totals) else { return nil }
       return total > 0 ? total : nil
     }
 
-    let total = questions.reduce(0) { $0 + marks(in: $1) }
+    var values: [Int] = []
+    for question in questions {
+      guard let value = marks(in: question) else { return nil }
+      values.append(value)
+    }
+    guard let total = checkedSum(values) else { return nil }
     return total > 0 ? total : nil
   }
 
-  private static func marks(in item: [String: Any]) -> Int {
+  private static func checkedSum(_ values: [Int]) -> Int? {
+    var total = 0
+    for value in values {
+      let (next, overflow) = total.addingReportingOverflow(value)
+      if overflow { return nil }
+      total = next
+    }
+    return total
+  }
+
+  private static func marks(in item: [String: Any], depth: Int = 0) -> Int? {
+    guard depth <= 128 else { return nil }
     if let direct = integer(item["marks"]), direct > 0 { return direct }
     for key in ["parts", "subparts"] {
       let nested = arrayOfDictionaries(item[key])
-      if !nested.isEmpty { return nested.reduce(0) { $0 + marks(in: $1) } }
+      if !nested.isEmpty {
+        var values: [Int] = []
+        for child in nested {
+          guard let value = marks(in: child, depth: depth + 1) else { return nil }
+          values.append(value)
+        }
+        return checkedSum(values)
+      }
     }
     return 0
   }

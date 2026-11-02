@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { DIAGRAM_TOOLS_URI } from "../packages/shared/src/diagramTools.ts";
 
 const id = z.string().min(1);
 const record = z.record(z.string(), z.unknown());
@@ -20,7 +21,16 @@ const block = z.object({ id, kind: z.string().min(1) }).passthrough();
 const subpart = z.object({ id, text: z.string().optional(), marks: z.number(), contentBlocks: z.array(block) }).passthrough();
 const part = subpart.extend({ subparts: z.array(subpart).optional(), itemOrder: z.array(orderItem).optional() });
 const question = subpart.extend({ parts: z.array(part).optional(), itemOrder: z.array(orderItem).optional() });
-const graphConfig = z.object({ type: z.string().optional() }).passthrough();
+const graphConfig = z
+  .object({
+    type: z
+      .string()
+      .optional()
+      .describe(
+        "Native diagram tool id. Call mauth_diagram_tools before choosing; geometricConstruction is Penrose theorem geometry, geometry2d is coordinate-accurate JSXGraph geometry.",
+      ),
+  })
+  .passthrough();
 const settings = z.object({ kind: z.string().min(1) }).passthrough();
 const partScope = z.object({ questionId: id, partId: id });
 const variants = {
@@ -97,11 +107,13 @@ export const actionCatalog = {
   scope: "MauthDocumentAction envelopes. Patch and renderer-specific settings are validated by the live editor during preview.",
   workflow: [
     "Read mauth_snapshot for documentId, ids and mutationBase",
+    "Before creating/replacing diagrams, call mauth_diagram_tools with the mathematical intent; inspect its recommendation and native example",
     "Dry-run mauth_actions_preview",
-    "Review warnings",
+    "Review warnings, including snapshot diagramWarnings and recommendedDiagramTool for each diagram",
     "Apply the same batch with baseSnapshotId and a stable idempotencyKey",
     "Validate and inspect Student and Solutions output",
   ],
+  diagramTools: { tool: "mauth_diagram_tools", resource: DIAGRAM_TOOLS_URI },
   actions: actionTypes,
   inputSchema: z.toJSONSchema(actionSchema),
   examples: [

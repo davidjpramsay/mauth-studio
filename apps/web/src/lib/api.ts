@@ -355,8 +355,28 @@ export function restoreProjectFileVersion(project: ProjectTarget, filePath: stri
   );
 }
 
-export function renderPenroseDiagram(spec: DiagramSpec, signal?: AbortSignal) {
-  return postJsonWithSignal<PenroseDiagramResponse>("/api/diagram/penrose", spec, signal);
+export async function renderPenroseDiagram(spec: DiagramSpec, signal?: AbortSignal) {
+  try {
+    return await postJsonWithSignal<PenroseDiagramResponse>("/api/diagram/penrose", spec, signal);
+  } catch (error) {
+    const transient = error instanceof TypeError || (error instanceof ApiError && [502, 503, 504].includes(error.status));
+    if (signal?.aborted || !transient) throw error;
+    // Retry temporary transport/service failures once, using exactly the same
+    // construction. Cancellation also cancels the delay and subsequent request.
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => {
+        clearTimeout(timer);
+        reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", abort);
+        resolve();
+      }, 750);
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+    signal?.throwIfAborted();
+    return postJsonWithSignal<PenroseDiagramResponse>("/api/diagram/penrose", spec, signal);
+  }
 }
 
 export interface MauthAgentEditorRegistrationResponse {

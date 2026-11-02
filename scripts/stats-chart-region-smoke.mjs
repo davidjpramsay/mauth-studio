@@ -220,7 +220,13 @@ async function main() {
   const api = spawn("uv", ["run", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(apiPort)], {
     cwd: path.join(ROOT, "apps/api"),
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, MAUTH_DOCUMENTS_ROOT: workspaceRoot, MAUTH_WORKSPACE_STATE_ROOT: stateRoot },
+    env: {
+      ...process.env,
+      MAUTH_AGENT_TOKEN: "",
+      MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED: "1",
+      MAUTH_DOCUMENTS_ROOT: workspaceRoot,
+      MAUTH_WORKSPACE_STATE_ROOT: stateRoot,
+    },
   });
   api.stdout.on("data", (chunk) => apiLogs.push(chunk.toString()));
   api.stderr.on("data", (chunk) => apiLogs.push(chunk.toString()));

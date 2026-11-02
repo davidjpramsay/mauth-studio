@@ -3,9 +3,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import sympy as sp
-from sympy.parsing.sympy_parser import convert_xor, parse_expr, standard_transformations
-
-TRANSFORMATIONS = standard_transformations + (convert_xor,)
+from mauth_math import InvalidMathExpression, parse_math_expression
 
 
 class MarkingEngine:
@@ -52,9 +50,11 @@ class MarkingEngine:
     @staticmethod
     def equivalent(expected: str, submitted: str) -> bool:
         try:
-            expected_expr = parse_expr(expected.replace("^", "**"), transformations=TRANSFORMATIONS)
-            submitted_expr = parse_expr(submitted.replace("^", "**"), transformations=TRANSFORMATIONS)
+            expected_expr = parse_math_expression(expected, implicit_multiplication=False)
+            submitted_expr = parse_math_expression(submitted, implicit_multiplication=False)
             return sp.simplify(expected_expr - submitted_expr) == 0
+        except InvalidMathExpression:
+            return False
         except Exception:
             return expected.strip() == submitted.strip()
 

@@ -6,12 +6,13 @@ interface LatexProps {
   latex?: string | null;
   block?: boolean;
   plainSimpleInlineLatex?: boolean;
+  showSolutionMarks?: boolean;
 }
 
-export const Latex = memo(function Latex({ latex, block = false, plainSimpleInlineLatex = true }: LatexProps) {
+export const Latex = memo(function Latex({ latex, block = false, plainSimpleInlineLatex = true, showSolutionMarks = false }: LatexProps) {
   const html = useMemo(
-    () => (latex ? renderMathJaxSvg(latex, { display: block, plainSimpleInlineLatex }) : ""),
-    [block, latex, plainSimpleInlineLatex],
+    () => (latex ? renderMathJaxSvg(latex, { display: block, plainSimpleInlineLatex, showSolutionMarks }) : ""),
+    [block, latex, plainSimpleInlineLatex, showSolutionMarks],
   );
 
   if (!latex) {

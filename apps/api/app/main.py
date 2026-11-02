@@ -14,8 +14,14 @@ from app.api.questions import router as questions_router
 from app.api.storage import router as storage_router
 from app.api.system import router as system_router
 from app.api.tests import router as tests_router
+from app.services.parser import InvalidMathExpression
 
 app = FastAPI(title="Mauth Studio API", version="0.1.0")
+
+
+@app.exception_handler(InvalidMathExpression)
+async def invalid_math_expression_handler(_request: Request, _error: InvalidMathExpression):
+    return JSONResponse(status_code=400, content={"detail": "Invalid mathematical expression"})
 
 
 @app.middleware("http")
@@ -23,6 +29,15 @@ async def authenticate_local_api(request: Request, call_next):
     expected_token = os.environ.get("MAUTH_AGENT_TOKEN", "").strip()
     public_api_paths = {"/api/health", "/api/system/status"}
     protected_api = request.url.path.startswith("/api/") and request.url.path not in public_api_paths
+    if protected_api and not expected_token and os.environ.get("MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED") != "1":
+        return JSONResponse(
+            status_code=503,
+            content={
+                "success": False,
+                "code": "API_AUTH_NOT_CONFIGURED",
+                "error": "The private API token is not configured.",
+            },
+        )
     if expected_token and protected_api:
         authorization = request.headers.get("Authorization", "")
         scheme, _, supplied_token = authorization.partition(" ")

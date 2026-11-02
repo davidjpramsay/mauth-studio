@@ -36,6 +36,8 @@ export function macosSidecarBuildPlan(root) {
       path.join(root, "packages", "formatting-engine"),
       "--paths",
       path.join(root, "packages", "marking-engine"),
+      "--paths",
+      path.join(root, "packages", "math-parser"),
       "--collect-submodules",
       "uvicorn",
       path.join(apiRoot, "app", "standalone.py"),

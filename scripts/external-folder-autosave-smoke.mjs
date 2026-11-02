@@ -64,7 +64,7 @@ async function startApiServer(workspaceRoot) {
   const port = await findFreePort();
   apiUrl = `http://127.0.0.1:${port}`;
   const logs = [];
-  const apiEnv = { ...process.env, MAUTH_DOCUMENTS_ROOT: workspaceRoot };
+  const apiEnv = { ...process.env, MAUTH_AGENT_TOKEN: "", MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED: "1", MAUTH_DOCUMENTS_ROOT: workspaceRoot };
   delete apiEnv.MATH_APP_STORAGE_ROOT;
   const child = spawn("uv", ["run", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(port)], {
     cwd: path.join(ROOT, "apps/api"),

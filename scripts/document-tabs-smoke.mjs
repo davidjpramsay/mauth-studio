@@ -61,6 +61,8 @@ async function startApiServer(documentsRoot, stateRoot) {
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
+      MAUTH_AGENT_TOKEN: "",
+      MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED: "1",
       MAUTH_DOCUMENTS_ROOT: documentsRoot,
       MATH_APP_STORAGE_ROOT: stateRoot,
     },

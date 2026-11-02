@@ -24,6 +24,9 @@ import type {
   GraphSlopeFieldPoint,
 } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
+import { boundedNumericRange, cartesianGridLines } from "@/lib/cartesianGrid";
+import { clearAxisNumbersFromGrid } from "./cartesianGridLabels";
+import { graphFramePaddingForPixels } from "./graphFramePadding";
 
 import { sampledFunctionCurveSegments } from "@/lib/functionCurveSampling";
 import {
@@ -34,8 +37,14 @@ import {
 } from "@/lib/graphFunctionDomains";
 import { graphAngleMarkerFeaturePoints, lineSegmentFeatureEndpoints } from "@/lib/graphFeatureGeometry";
 import { graphAxisArrowVisibility } from "@/lib/diagramGraph2d";
-import { geometry2dConfigWithLabelPosition, type Geometry2DLabelPrimitiveKind } from "@/lib/diagramGeometry2d";
-import { renderMathJaxSvg } from "@/lib/mathjax";
+import {
+  DEFAULT_GEOMETRY_EQUAL_LENGTH_TICK_SIZE_PX,
+  geometry2dConfigWithLabelPosition,
+  type Geometry2DLabelPrimitiveKind,
+} from "@/lib/diagramGeometry2d";
+import { graphLabelHtml } from "./graphLabelHtml";
+import { enableHtmlTextDragging } from "@/lib/graphHtmlLabelDragging";
+import type { GraphLabelPositionChange } from "@/lib/previewDiagramVisibility";
 import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, graphLabelSourceLatex } from "./graphTypography";
 
 interface FunctionGraphProps {
@@ -46,6 +55,7 @@ interface FunctionGraphProps {
   solutionFunctionColor?: string;
   onGraphConfigChange?: (graphConfig: GraphConfig) => void;
   onGraphConfigPatch?: (patch: Partial<GraphConfig>) => void;
+  onLabelPositionChange?: (change: GraphLabelPositionChange) => void;
 }
 
 const FUNCTION_COLORS = ["#0f766e", "#b45309", "#2563eb", "#7c3aed", "#be123c"];
@@ -55,15 +65,15 @@ const GRID_MINOR_COLOR = "#dddddd";
 const AXIS_COLOR = "#000000";
 const DEFAULT_GRAPH_WIDTH = 680;
 const DEFAULT_GRAPH_HEIGHT = 300;
-const BOARD_EDGE_PADDING_RATIO = 0.026;
-const BOARD_EDGE_PADDING_MIN_UNITS = 0.26;
+const BOARD_EDGE_PADDING_RATIO = 0.022;
+const BOARD_EDGE_PADDING_MIN_UNITS = 0.22;
 const AXIS_LABEL_EDGE_PADDING_RATIO = 0.018;
 const AXIS_LABEL_EDGE_PADDING_MIN_UNITS = 0.32;
 const ARROW_SCAN_STEPS = 180;
 const AXIS_ARROW_SIZE = 4;
 const AXIS_STROKE_WIDTH = 2;
 const AXIS_TEXT_FONT_SIZE = GRAPH_LABEL_FONT_SIZE_PT;
-const AXIS_CONTENT_EDGE_PADDING_PX = 34;
+const AXIS_CONTENT_EDGE_PADDING_PX = 30;
 const X_TICK_LABEL_OFFSET_PX = -12;
 const Y_TICK_LABEL_OFFSET_PX = -16;
 const FUNCTION_ARROW_LENGTH_PX = 9;
@@ -214,19 +224,9 @@ const ROUNDED_GRAPH_STROKE = {
   lineJoin: "round",
 } as const;
 
-function numericRange(min: number, max: number, step: number) {
-  if (!Number.isFinite(step) || step <= 0) return [];
-  const values: number[] = [];
-  const start = Math.ceil(min / step) * step;
-  for (let value = start; value <= max + step / 1000; value += step) {
-    values.push(Number(value.toFixed(8)));
-  }
-  return values;
-}
-
 function axisNumberValues(min: number, max: number, step: number) {
   const edgeTolerance = step / 1000;
-  return numericRange(min, max, step).filter(
+  return boundedNumericRange(min, max, step).filter(
     (value) => Math.abs(value) > edgeTolerance && value > min + edgeTolerance && value < max - edgeTolerance,
   );
 }
@@ -234,11 +234,6 @@ function axisNumberValues(min: number, max: number, step: number) {
 function axisNumberLatex(value: number) {
   const normalized = Math.abs(value) < 1e-10 ? 0 : Number(value.toFixed(8));
   return `$${normalized}$`;
-}
-
-function isMultiple(value: number, step: number) {
-  if (!Number.isFinite(step) || step <= 0) return false;
-  return Math.abs(value / step - Math.round(value / step)) < 0.001;
 }
 
 function finiteNumberFromUnknown(value: unknown) {
@@ -286,6 +281,13 @@ function slopeFieldSpec(graphConfig: GraphConfig): SlopeFieldSpec | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
   if (record.show === false) return null;
+  for (const key of ["xValues", "yValues", "points", "highlightedPoints"]) {
+    if (Array.isArray(record[key]) && record[key].length > 420) return null;
+  }
+  const pointCount =
+    (Array.isArray(record.points) ? record.points.length : 0) +
+    (Array.isArray(record.highlightedPoints) ? record.highlightedPoints.length : 0);
+  if (pointCount > 420) return null;
   const expression =
     typeof record.expression === "string" && record.expression.trim()
       ? record.expression.trim()
@@ -387,13 +389,6 @@ function axisLabelEdgePadding(span: number) {
   return Math.max(span * AXIS_LABEL_EDGE_PADDING_RATIO, AXIS_LABEL_EDGE_PADDING_MIN_UNITS);
 }
 
-function boardPaddingForPixels(span: number, displaySize: number, requestedPaddingPx: number) {
-  if (!Number.isFinite(displaySize) || displaySize <= 0) return 0;
-  const paddingPx = Math.min(requestedPaddingPx, displaySize * 0.14);
-  const contentSize = displaySize - paddingPx * 2;
-  return contentSize > 0 ? (span * paddingPx) / contentSize : 0;
-}
-
 function graphFunctionDomain(graphFunction: GraphFunction, graphConfig: GraphConfig) {
   const xMin = graphConfig.xMin ?? -10;
   const xMax = graphConfig.xMax ?? 10;
@@ -457,7 +452,7 @@ function slopeFieldAxisValues(
   if (explicitValues?.length) return explicitValues;
   const [min, max] = range ?? [fallbackMin, fallbackMax];
   const spacing = Number.isFinite(step) && step && step > 0 ? step : fallbackStep;
-  return numericRange(min, max, spacing);
+  return boundedNumericRange(min, max, spacing, 420);
 }
 
 function slopeFieldSegmentEndpoints(x: number, y: number, slope: number, length: number): [[number, number], [number, number]] | null {
@@ -531,8 +526,9 @@ function renderSlopeField(
   } as Record<string, unknown>;
 
   let rendered = 0;
-  const maxSegments = 420;
+  const maxSegments = 420 - (field.points?.length ?? 0) - (field.highlightedPoints?.length ?? 0);
   for (const x of xValues) {
+    if (rendered >= maxSegments) break;
     for (const y of yValues) {
       if (rendered >= maxSegments) break;
       drawSlopeFieldSegment(board, x, y, evaluator(x, y), segmentLength, baseAttributes);
@@ -1026,51 +1022,6 @@ function moveElement(element: unknown, x: number, y: number) {
   candidate.moveTo?.([x, y], 0);
 }
 
-function enableHtmlTextDragging(board: JXG.Board, text: unknown, onMove: (x: number, y: number) => void) {
-  const draggableText = text as JXGElement;
-  const node = draggableText.rendNode;
-  if (!node || node.dataset.mauthDragBound === "true") return;
-
-  node.dataset.mauthDragBound = "true";
-  draggableText.isDraggable = false;
-  node.style.setProperty("cursor", "move");
-  node.style.setProperty("pointer-events", "auto");
-  node.style.setProperty("user-select", "none");
-  node.style.setProperty("-webkit-user-select", "none");
-  node.style.setProperty("touch-action", "none");
-  node.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
-    const start = textCoordinates(text);
-    if (!start) return;
-    const sizedBoard = board as JXG.Board & { unitX?: number; unitY?: number };
-    const unitX = sizedBoard.unitX || 1;
-    const unitY = sizedBoard.unitY || 1;
-    const startClientX = event.clientX;
-    const startClientY = event.clientY;
-
-    event.preventDefault();
-    event.stopPropagation();
-    node.setPointerCapture?.(event.pointerId);
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      moveEvent.preventDefault();
-      const x = start[0] + (moveEvent.clientX - startClientX) / unitX;
-      const y = start[1] - (moveEvent.clientY - startClientY) / unitY;
-      moveElement(text, x, y);
-      board.update();
-    };
-    const handlePointerUp = (upEvent: PointerEvent) => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      node.releasePointerCapture?.(upEvent.pointerId);
-      const coords = textCoordinates(text);
-      if (coords) onMove(coords[0], coords[1]);
-    };
-    window.addEventListener("pointermove", handlePointerMove, { passive: false });
-    window.addEventListener("pointerup", handlePointerUp);
-  });
-}
-
 function setRenderedDataAttributes(element: unknown, attributes: Record<string, string | undefined>) {
   if (!element || typeof element !== "object") return;
   const node = (element as JXGElement).rendNode;
@@ -1098,10 +1049,6 @@ function makePassiveDecoration(element: unknown) {
   });
 }
 
-function graphLabelLatex(source: string) {
-  return graphLabelSourceLatex(source);
-}
-
 function labelDataAttributes(attributes: Record<string, string | undefined>) {
   return Object.entries(attributes)
     .filter((entry): entry is [string, string] => Boolean(entry[1]))
@@ -1110,12 +1057,12 @@ function labelDataAttributes(attributes: Record<string, string | undefined>) {
 }
 
 function renderLatexLabelHtml(latex: string, color: string, attributes: Record<string, string | undefined> = {}) {
-  const normalizedLatex = graphLabelLatex(latex);
+  const normalizedLatex = latex;
   const safeColor = safeCssColor(color);
   const interactionCss = PASSIVE_GRAPH_DECORATION_CSS;
   const labelAttrs = labelDataAttributes({ "data-mauth-label-text": normalizedLatex, ...attributes });
   try {
-    const html = renderMathJaxSvg(normalizedLatex, { display: false, plainSimpleInlineLatex: false });
+    const html = graphLabelHtml(latex, Boolean(attributes["data-mauth-axis-number"]), true);
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${html}</span>`;
   } catch {
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(normalizedLatex)}</span>`;
@@ -1123,6 +1070,21 @@ function renderLatexLabelHtml(latex: string, color: string, attributes: Record<s
 }
 
 function createLabelText(
+  board: JXG.Board,
+  x: number,
+  y: number,
+  source: string | (() => string),
+  color: string,
+  onMove?: (x: number, y: number) => void,
+  attributes: Record<string, string | undefined> = {},
+) {
+  const latex = typeof source === "function" ? () => graphLabelSourceLatex(source()) : graphLabelSourceLatex(source);
+  return createLatexLabelText(board, x, y, latex, color, onMove, attributes);
+}
+
+// Generated feature/function labels are already TeX. Do not infer prose a
+// second time: an explicit mathematical label such as $12$ must remain maths.
+function createLatexLabelText(
   board: JXG.Board,
   x: number,
   y: number,
@@ -1178,7 +1140,8 @@ function createAxisLabelText(
   // to standalone HTML text. Convert the intended screen-pixel correction to
   // board coordinates so axis numbers and letters visibly clear the stroke.
   const [positionX, positionY] = offsetUserByPixels(board, x, y, offset[0], -offset[1]);
-  const text = board.create("text", [positionX, positionY, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
+  const source = attributes["data-mauth-axis-number"] ? latex : graphLabelSourceLatex(latex);
+  const text = board.create("text", [positionX, positionY, () => renderLatexLabelHtml(source, AXIS_COLOR, attributes)], {
     fixed: !onMove,
     highlight: false,
     strokeColor: AXIS_COLOR,
@@ -1195,9 +1158,12 @@ function createAxisLabelText(
   } as Record<string, unknown>);
   if (onMove) {
     window.requestAnimationFrame(() =>
-      enableHtmlTextDragging(board, text, (nextX, nextY) => onMove(Number(nextX.toFixed(6)), Number(nextY.toFixed(6)))),
+      enableHtmlTextDragging(board, text, (nextX, nextY) =>
+        onMove(Number((nextX - positionX + x).toFixed(6)), Number((nextY - positionY + y).toFixed(6))),
+      ),
     );
   }
+  return text as JXG.Text;
 }
 
 function createFeaturePoint(
@@ -1225,7 +1191,7 @@ function createFeaturePoint(
     strokeWidth: lineWeight(feature.strokeWidth, 2),
     layer: GRAPH_LAYERS.point,
   });
-  const labelText = createLabelText(
+  const labelText = createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : x,
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : y,
@@ -1280,7 +1246,7 @@ function createFeaturePoint(
 function createFreeLabel(board: JXG.Board, feature: GraphFeature, color: string, onMove?: (x: number, y: number) => void) {
   const x = Number.isFinite(feature.x) ? (feature.x as number) : 0;
   const y = Number.isFinite(feature.y) ? (feature.y as number) : 0;
-  createLabelText(board, x, y, () => featureLabelLatex({ ...feature, labelMode: "name" }), color, onMove);
+  createLatexLabelText(board, x, y, () => featureLabelLatex({ ...feature, labelMode: "name" }), color, onMove);
 }
 
 function createLineSegmentFeature(
@@ -1306,7 +1272,7 @@ function createLineSegmentFeature(
 
   const label = featureLabelLatex(feature);
   if (label.trim()) {
-    createLabelText(
+    createLatexLabelText(
       board,
       Number.isFinite(feature.labelX) ? (feature.labelX as number) : (startCoords[0] + endCoords[0]) / 2,
       Number.isFinite(feature.labelY) ? (feature.labelY as number) : (startCoords[1] + endCoords[1]) / 2,
@@ -1719,7 +1685,7 @@ function createAngleMarkerFeature(
   const startAngle = Math.atan2(first[1] - vertex[1], first[0] - vertex[0]);
   const middleAngle = startAngle + shortestAngleDelta(startAngle, Math.atan2(second[1] - vertex[1], second[0] - vertex[0])) / 2;
   const labelRadius = markerSize * 1.65;
-  createLabelText(
+  createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : vertex[0] + Math.cos(middleAngle) * labelRadius,
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : vertex[1] + Math.sin(middleAngle) * labelRadius,
@@ -1794,7 +1760,7 @@ function renderGraph2DGeometry(
     const attributes = geometry2DRenderedAttributes("decoration", decoration.id, decoration.kind);
     if (decoration.kind === "equalLength") {
       const tickCount = decoration.tickCount ?? 1;
-      const sizePx = decoration.size ?? 16;
+      const sizePx = decoration.size ?? DEFAULT_GEOMETRY_EQUAL_LENGTH_TICK_SIZE_PX;
       (decoration.segments ?? []).forEach((segmentId) =>
         drawGeometryEqualLengthTicks(board, segments.get(segmentId), points, color, tickCount, sizePx, {
           ...attributes,
@@ -2091,7 +2057,7 @@ function drawRegionGeometry(
   onLabelMove?: (x: number, y: number) => void,
 ) {
   drawRegionPolygon(board, geometry.polygon, feature, color);
-  createLabelText(
+  createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : geometry.labelPoint[0],
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : geometry.labelPoint[1],
@@ -2128,7 +2094,7 @@ function drawRegionGeometriesLabel(
     return geometryArea > largestArea ? geometry : largest;
   }, geometries[0]);
 
-  createLabelText(
+  createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : labelGeometry.labelPoint[0],
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : labelGeometry.labelPoint[1],
@@ -2145,7 +2111,7 @@ function drawRegionGeometryLabel(
   color: string,
   onLabelMove?: (x: number, y: number) => void,
 ) {
-  createLabelText(
+  createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : geometry.labelPoint[0],
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : geometry.labelPoint[1],
@@ -3201,6 +3167,7 @@ export function FunctionGraph({
   solutionFunctionColor,
   onGraphConfigChange,
   onGraphConfigPatch,
+  onLabelPositionChange,
 }: FunctionGraphProps) {
   const boardId = useMemo(() => `jxg-${Math.random().toString(36).slice(2)}`, []);
 
@@ -3241,14 +3208,20 @@ export function FunctionGraph({
     const gridMinorColor = graphConfig.gridMinorColor || GRID_MINOR_COLOR;
     const displayWidth = graphConfig.widthPx ?? DEFAULT_GRAPH_WIDTH;
     const displayHeight = graphDisplayHeight(graphConfig);
+    const minimumBoardPaddingX = Math.max(boardPaddingX, graphFramePaddingForPixels(xSpan, displayWidth));
+    const minimumBoardPaddingY = Math.max(boardPaddingY, graphFramePaddingForPixels(ySpan, displayHeight));
     const renderedBoardPaddingX =
       showAxes && (showYAxisNumbers || showAxisLabels)
-        ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
-        : boardPaddingX;
+        ? Math.max(minimumBoardPaddingX, graphFramePaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
+        : graphConfig.type === "geometry2d"
+          ? Math.max(minimumBoardPaddingX, graphFramePaddingForPixels(xSpan, displayWidth, 32))
+          : minimumBoardPaddingX;
     const renderedBoardPaddingY =
       showAxes && (showXAxisNumbers || showAxisLabels)
-        ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
-        : boardPaddingY;
+        ? Math.max(minimumBoardPaddingY, graphFramePaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
+        : graphConfig.type === "geometry2d"
+          ? Math.max(minimumBoardPaddingY, graphFramePaddingForPixels(ySpan, displayHeight, 32))
+          : minimumBoardPaddingY;
     const xLabelStep = axisLabelStep({
       graphConfig,
       axis: "x",
@@ -3282,80 +3255,31 @@ export function FunctionGraph({
       else if (onGraphConfigChange) onGraphConfigChange({ ...graphConfig, ...patch });
     };
 
-    if (showGrid) {
-      const gridLineAttributes = (major: boolean) =>
-        ({
-          fixed: true,
-          highlight: false,
-          straightFirst: false,
-          straightLast: false,
-          strokeColor: major ? gridMajorColor : gridMinorColor,
-          strokeWidth: major ? 1.35 : 0.8,
-          dash: major ? 0 : 2,
-          layer: GRAPH_LAYERS.grid,
-        }) as Record<string, unknown>;
-
-      if (showMinorGrid && xMinorStep && xMinorStep < xMajorStep) {
-        const lineAttributes = gridLineAttributes(false);
-        numericRange(xMin, xMax, xMinorStep).forEach((x) => {
-          if (isMultiple(x, xMajorStep)) return;
-          makePassiveDecoration(
-            board.create(
-              "segment",
-              [
-                [x, yMin],
-                [x, yMax],
-              ],
-              lineAttributes,
-            ),
-          );
-        });
-      }
-
-      if (showMinorGrid && yMinorStep && yMinorStep < yMajorStep) {
-        const lineAttributes = gridLineAttributes(false);
-        numericRange(yMin, yMax, yMinorStep).forEach((y) => {
-          if (isMultiple(y, yMajorStep)) return;
-          makePassiveDecoration(
-            board.create(
-              "segment",
-              [
-                [xMin, y],
-                [xMax, y],
-              ],
-              lineAttributes,
-            ),
-          );
-        });
-      }
-
-      if (showMajorGrid) {
-        const lineAttributes = gridLineAttributes(true);
-        numericRange(xMin, xMax, xMajorStep).forEach((x) => {
-          makePassiveDecoration(
-            board.create(
-              "segment",
-              [
-                [x, yMin],
-                [x, yMax],
-              ],
-              lineAttributes,
-            ),
-          );
-        });
-        numericRange(yMin, yMax, yMajorStep).forEach((y) => {
-          makePassiveDecoration(
-            board.create(
-              "segment",
-              [
-                [xMin, y],
-                [xMax, y],
-              ],
-              lineAttributes,
-            ),
-          );
-        });
-      }
+    for (const { from, to, major, boundary } of cartesianGridLines({
+      xMin,
+      xMax,
+      yMin,
+      yMax,
+      xMajorStep,
+      yMajorStep,
+      xMinorStep,
+      yMinorStep,
+      showGrid,
+      showMajorGrid,
+      showMinorGrid,
+    })) {
+      const line = board.create("segment", [from, to], {
+        fixed: true,
+        highlight: false,
+        straightFirst: false,
+        straightLast: false,
+        strokeColor: major ? gridMajorColor : gridMinorColor,
+        strokeWidth: major ? 1.35 : 0.8,
+        dash: major || boundary ? 0 : 2,
+        layer: GRAPH_LAYERS.grid,
+      });
+      makePassiveDecoration(line);
+      line.rendNode?.setAttribute("data-mauth-grid-line", boundary ? "boundary" : major ? "major" : "minor");
     }
 
     if (showAxes) {
@@ -3421,19 +3345,21 @@ export function FunctionGraph({
       );
 
       if (showXAxisNumbers && yMin <= 0 && yMax >= 0) {
-        axisNumberValues(xMin, xMax, xLabelStep).forEach((x) =>
+        const numbers = axisNumberValues(xMin, xMax, xLabelStep).map((x) =>
           createAxisLabelText(board, x, 0, axisNumberLatex(x), [0, X_TICK_LABEL_OFFSET_PX], "middle", "top", undefined, {
             "data-mauth-axis-number": "x",
           }),
         );
+        if (showGrid && (showMajorGrid || showMinorGrid)) clearAxisNumbersFromGrid(board, numbers, "x", { xMin, xMax, yMin, yMax });
       }
 
       if (showYAxisNumbers && xMin <= 0 && xMax >= 0) {
-        axisNumberValues(yMin, yMax, yLabelStep).forEach((y) =>
+        const numbers = axisNumberValues(yMin, yMax, yLabelStep).map((y) =>
           createAxisLabelText(board, 0, y, axisNumberLatex(y), [Y_TICK_LABEL_OFFSET_PX, 0], "right", "middle", undefined, {
             "data-mauth-axis-number": "y",
           }),
         );
+        if (showGrid && (showMajorGrid || showMinorGrid)) clearAxisNumbersFromGrid(board, numbers, "y", { xMin, xMax, yMin, yMax });
       }
 
       if (showAxisLabels) {
@@ -3471,6 +3397,8 @@ export function FunctionGraph({
     renderSlopeField(board, graphConfig, xMajorStep, yMajorStep, xMin, xMax, yMin, yMax);
 
     const commitFunctionLabelPosition = (functionIndex: number, x: number, y: number) => {
+      const originalIndex = graphConfig.functions?.indexOf(functions[functionIndex]) ?? functionIndex;
+      if (onLabelPositionChange && originalIndex >= 0) return onLabelPositionChange({ kind: "function", index: originalIndex, x, y });
       if (!onGraphConfigChange) return;
       const nextFunctions = (graphConfig.functions ?? functions).map((graphFunction, index) =>
         index === functionIndex ? { ...graphFunction, labelX: x, labelY: y } : graphFunction,
@@ -3479,6 +3407,7 @@ export function FunctionGraph({
     };
 
     const commitFeatureLabelPosition = (featureIndex: number, x: number, y: number) => {
+      if (onLabelPositionChange) return onLabelPositionChange({ kind: "feature", index: featureIndex, x, y });
       if (!onGraphConfigChange) return;
       const nextFeatures = graphFeatures(graphConfig).map((feature, index) =>
         index === featureIndex ? { ...feature, labelX: x, labelY: y } : feature,
@@ -3487,6 +3416,7 @@ export function FunctionGraph({
     };
 
     const commitFreeLabelPosition = (featureIndex: number, x: number, y: number) => {
+      if (onLabelPositionChange) return onLabelPositionChange({ kind: "free-label", index: featureIndex, x, y });
       if (!onGraphConfigChange) return;
       const nextFeatures = graphFeatures(graphConfig).map((feature, index) =>
         index === featureIndex ? { ...feature, x: Number(x.toFixed(6)), y: Number(y.toFixed(6)) } : feature,
@@ -3494,9 +3424,11 @@ export function FunctionGraph({
       onGraphConfigChange({ ...graphConfig, features: nextFeatures });
     };
 
-    const commitGeometry2DLabelPosition: CommitGeometry2DLabelPosition | undefined = onGraphConfigChange
-      ? (kind, id, x, y) => onGraphConfigChange(geometry2dConfigWithLabelPosition(graphConfig, kind, id, x, y))
-      : undefined;
+    const commitGeometry2DLabelPosition: CommitGeometry2DLabelPosition | undefined = onLabelPositionChange
+      ? (primitiveKind, id, x, y) => onLabelPositionChange({ kind: "geometry2d", primitiveKind, id, x, y })
+      : onGraphConfigChange
+        ? (kind, id, x, y) => onGraphConfigChange(geometry2dConfigWithLabelPosition(graphConfig, kind, id, x, y))
+        : undefined;
 
     const commitFeaturePointPosition = (featureIndex: number, x: number, y: number, previousX: number, previousY: number) => {
       if (!onGraphConfigChange) return;
@@ -3641,7 +3573,7 @@ export function FunctionGraph({
       if (!shouldShowGraphItem(graphFunction) || !graphFunction.showLabel) return;
       const labelX = graphFunction.labelX ?? xMin;
       const labelY = graphFunction.labelY ?? yMax;
-      createLabelText(
+      createLatexLabelText(
         board,
         labelX,
         labelY,
@@ -3650,7 +3582,7 @@ export function FunctionGraph({
           (graphFunction.solutionOnly === true ? solutionFunctionColor : undefined) ??
           graphFunction.color ??
           FUNCTION_COLORS[index % FUNCTION_COLORS.length],
-        onGraphConfigChange ? (x, y) => commitFunctionLabelPosition(index, x, y) : undefined,
+        onGraphConfigChange || onLabelPositionChange ? (x, y) => commitFunctionLabelPosition(index, x, y) : undefined,
       );
     });
 
@@ -3662,6 +3594,7 @@ export function FunctionGraph({
     graphConfig,
     onGraphConfigChange,
     onGraphConfigPatch,
+    onLabelPositionChange,
     previewAnchor,
     solutionColor,
     solutionFeatureColor,

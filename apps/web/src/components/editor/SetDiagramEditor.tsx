@@ -185,15 +185,7 @@ export function SetDiagramEditor({ config, showSolutions = true, settingsMode = 
         </div>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-4">
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Universe label
-          <input
-            value={String(data.universe.label ?? "")}
-            onChange={(event) => updateUniverse({ label: event.target.value })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
+      <section className="grid grid-cols-1 gap-3 border-t pt-3 md:grid-cols-3">
         <label className="flex flex-col gap-2 text-xs font-medium">
           A label
           <input
@@ -234,7 +226,7 @@ export function SetDiagramEditor({ config, showSolutions = true, settingsMode = 
         </label>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <label className="flex flex-col gap-2 text-xs font-medium">
-            U total box
+            Overall total box
             <input
               value={String(data.universe.countLabel ?? "")}
               onChange={(event) => updateUniverse({ countLabel: event.target.value })}

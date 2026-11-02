@@ -6,14 +6,18 @@ import { DiagramRenderBoundary, DiagramRenderPlaceholder } from "@/components/pr
 import { graphHeight, graphWidth, isSolutionOnlyGraphFeature, isSolutionOnlyGraphFunction } from "@/lib/diagramGraph2d";
 import { geometry2dData, geometry2dDataHasSolutionOnly } from "@/lib/diagramGeometry2d";
 import { vector2dConfigHasSolutionOnly } from "@/lib/diagramVector2d";
-import { graph3dConfigHasSolutionOnly } from "@/lib/diagramGraph3d";
+import { graph3dConfigHasSolutionOnly, graph3dConfigWithLabelScreenOffset } from "@/lib/diagramGraph3d";
 import { imageConfigForSolutionVisibility, imageConfigHasSolutionOnly } from "@/lib/diagramImage";
 import { statsChartConfigHasSolutionOnly } from "@/lib/diagramStatsChart";
 import { penroseConfigHasSolutionOnly } from "@/lib/diagramPenroseSolution";
+import { penroseLabelPositionPatch } from "@/lib/diagramPenrose";
+import { penroseRelationshipsWithLabelIds, penroseSupportsLabelDragging } from "../../../../../packages/shared/src/penroseLabels.ts";
 import {
   previewGeometry2DConfigForSolutionVisibility,
   previewGraph3DConfigForSolutionVisibility,
   graphConfigWithPresentationPatch,
+  graphConfigWithLabelPosition,
+  type GraphLabelPositionChange,
   previewGraphConfigForSolutionVisibility,
   previewStatsChartConfigForSolutionVisibility,
   previewVector2DConfigForSolutionVisibility,
@@ -80,10 +84,18 @@ function PreviewDiagramContent({
   const graph3dVisibleConfig = previewGraph3DConfigForSolutionVisibility(vectorVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
   const statsVisibleConfig = previewStatsChartConfigForSolutionVisibility(graph3dVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
   const imageVisibleConfig = imageConfigForSolutionVisibility(statsVisibleConfig, showSolutions, TEST_SOLUTION_COLOR);
-  const config = previewPenroseConfigForSolutionVisibility(imageVisibleConfig, showSolutions);
+  const penroseData = imageVisibleConfig.data as { relationships?: unknown[] } | undefined;
+  const identifiedConfig =
+    penroseSupportsLabelDragging(imageVisibleConfig.type) && !imageVisibleConfig.options?.substanceSource && penroseData
+      ? { ...imageVisibleConfig, data: { ...penroseData, relationships: penroseRelationshipsWithLabelIds(penroseData.relationships) } }
+      : imageVisibleConfig;
+  const config = previewPenroseConfigForSolutionVisibility(identifiedConfig, showSolutions);
   const visibleGraphConfigChange = hasHiddenSolutionContent ? undefined : onGraphConfigChange;
   const axisLabelConfigPatch = onGraphConfigChange
     ? (patch: Partial<GraphConfig>) => onGraphConfigChange(graphConfigWithPresentationPatch(baseConfig, patch))
+    : undefined;
+  const labelPositionChange = onGraphConfigChange
+    ? (change: GraphLabelPositionChange) => onGraphConfigChange(graphConfigWithLabelPosition(baseConfig, config, change))
     : undefined;
   const solutionColor = solutionTone && showSolutions ? TEST_SOLUTION_COLOR : undefined;
   const solutionFeatureColor = showSolutions ? TEST_SOLUTION_COLOR : undefined;
@@ -98,7 +110,16 @@ function PreviewDiagramContent({
     case "geometricConstruction":
     case "network":
     case "setDiagram":
-      return <GeometricConstructionDiagram graphConfig={config} />;
+      return (
+        <GeometricConstructionDiagram
+          graphConfig={config}
+          onLabelMove={
+            onGraphConfigChange
+              ? (id, offset) => onGraphConfigChange({ ...baseConfig, ...penroseLabelPositionPatch(baseConfig, id, offset) })
+              : undefined
+          }
+        />
+      );
     case "statsChart":
       return <StatsChartDiagram graphConfig={config} />;
     case "geometry2d":
@@ -108,13 +129,32 @@ function PreviewDiagramContent({
           previewAnchor={anchor}
           onGraphConfigChange={visibleGraphConfigChange}
           onGraphConfigPatch={axisLabelConfigPatch}
+          onLabelPositionChange={labelPositionChange}
         />
       );
     case "vector2d":
-      return <Vector2DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
+      return (
+        <Vector2DGraph
+          graphConfig={config}
+          onGraphConfigChange={visibleGraphConfigChange}
+          onGraphConfigPatch={axisLabelConfigPatch}
+          onLabelPositionChange={labelPositionChange}
+        />
+      );
     case "graph3d":
     case "basic3d":
-      return <Basic3DGraph graphConfig={config} onGraphConfigChange={visibleGraphConfigChange} />;
+      return (
+        <Basic3DGraph
+          graphConfig={config}
+          onGraphConfigChange={visibleGraphConfigChange}
+          onGraphConfigPatch={axisLabelConfigPatch}
+          onLabelPositionChange={
+            onGraphConfigChange
+              ? (kind, id, offset) => onGraphConfigChange(graph3dConfigWithLabelScreenOffset(baseConfig, kind, id, offset))
+              : undefined
+          }
+        />
+      );
     case "graph2d":
     case "2d_graph":
     case "function":
@@ -128,6 +168,7 @@ function PreviewDiagramContent({
           solutionFunctionColor={solutionFeatureColor}
           onGraphConfigChange={visibleGraphConfigChange}
           onGraphConfigPatch={axisLabelConfigPatch}
+          onLabelPositionChange={labelPositionChange}
         />
       );
   }

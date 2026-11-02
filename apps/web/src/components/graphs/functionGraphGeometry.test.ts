@@ -2,6 +2,30 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { lineSegmentFeatureEndpoints } from "../../lib/graphFeatureGeometry.ts";
+import { graphFramePaddingForPixels } from "./graphFramePadding.ts";
+
+test("graph frames keep the same 24-pixel clearance across coordinate scales", () => {
+  for (const span of [0.2, 6, 110, 10000]) {
+    for (const size of [220, 520, 680]) {
+      const padding = graphFramePaddingForPixels(span, size);
+      const actualPixels = (padding / (span + 2 * padding)) * size;
+      assert.ok(Math.abs(actualPixels - 24) < 1e-8);
+    }
+  }
+});
+
+test("graph frame padding preserves the larger existing axis-label reserve", () => {
+  const padding = graphFramePaddingForPixels(110, 220, 30);
+  assert.ok(Math.abs((padding / (110 + 2 * padding)) * 220 - 30) < 1e-8);
+});
+
+test("small and unmeasured graph frames cannot produce an invalid content box", () => {
+  assert.equal(graphFramePaddingForPixels(10, 0), 0);
+  assert.equal(graphFramePaddingForPixels(10, Number.NaN), 0);
+  const padding = graphFramePaddingForPixels(10, 20);
+  assert.ok(Number.isFinite(padding) && padding > 0);
+  assert.ok((padding / (10 + 2 * padding)) * 20 < 10);
+});
 
 test("lineSegmentFeatureEndpoints spans vertical line segments to the grid range", () => {
   assert.deepEqual(

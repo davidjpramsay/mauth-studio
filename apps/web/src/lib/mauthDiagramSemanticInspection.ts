@@ -114,7 +114,11 @@ function labelIsVisible(summary: PenroseSubstanceSummary, objectName: string) {
 }
 
 function uppercasePointLabels(rawText: string) {
-  return Array.from(new Set(rawText.match(/\b[A-Z]\b/g) ?? []));
+  const labels: string[] = [...(rawText.match(/\b[A-Z]\b/g) ?? [])];
+  for (const math of rawText.matchAll(/\$([^$]+)\$/g)) {
+    for (const group of math[1].matchAll(/\b([A-Z]{2,3})\b/g)) labels.push(...group[1]);
+  }
+  return Array.from(new Set(labels));
 }
 
 function normalizedPlainText(value: string) {

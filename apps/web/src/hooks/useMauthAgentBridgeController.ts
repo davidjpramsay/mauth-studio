@@ -15,6 +15,8 @@ import { buildMauthAgentSnapshot } from "@/lib/mauthAgentSnapshot";
 import { reconcileAgentDraftState } from "@/lib/mauthAgentFileState";
 import { afterEditorStateSettles } from "@/lib/mauthAgentBridgeRetry";
 import { useMauthAgentBridge, type MauthAgentBridgeHandlerResult } from "@/lib/useMauthAgentBridge";
+import { inspectDocumentDiagrams, inspectRenderedDiagram } from "@/lib/mauthDocumentDiagramInspection";
+import { diagramRequirementIssues, type DiagramRequirements } from "../../../../packages/shared/src/diagramCapabilities.ts";
 import { useStableEvent } from "@/hooks/useStableEvent";
 
 export interface MauthAgentDocumentLifecycleHandlers {
@@ -229,13 +231,28 @@ export function useMauthAgentBridgeController<
     };
   });
 
-  const handleAgentValidation = useStableEvent((): MauthAgentBridgeHandlerResult => {
+  const handleAgentValidation = useStableEvent((payload: Record<string, unknown>): MauthAgentBridgeHandlerResult => {
+    const requirementIssues = diagramRequirementIssues(payload.requirements);
+    if (requirementIssues.length) return agentBridgeError(400, "INVALID_DIAGRAM_REQUIREMENTS", requirementIssues.join("; "));
     const validation = validate();
+    const diagramInspections = payload.inspectDiagrams
+      ? inspectDocumentDiagrams(
+          currentDocument(),
+          {
+            blockId: typeof payload.blockId === "string" ? payload.blockId : undefined,
+            requirements: payload.requirements as DiagramRequirements | undefined,
+          },
+          inspectRenderedDiagram,
+        )
+      : undefined;
+    if (payload.blockId && diagramInspections && !diagramInspections.length)
+      return agentBridgeError(404, "DIAGRAM_NOT_FOUND", "No diagram block matches blockId in this document.");
     return {
       status: 200,
       body: {
         success: true,
         validation,
+        ...(diagramInspections ? { diagramInspections } : {}),
         snapshot: buildCurrentAgentSnapshot(validation),
       },
     };

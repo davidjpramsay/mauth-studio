@@ -108,7 +108,13 @@ try {
   const webPort = await port();
   apiUrl = `http://127.0.0.1:${apiPort}`;
   webUrl = `http://127.0.0.1:${webPort}`;
-  const env = { ...process.env, MAUTH_DOCUMENTS_ROOT: path.join(output, "Home"), MAUTH_WORKSPACE_STATE_ROOT: path.join(output, "State") };
+  const env = {
+    ...process.env,
+    MAUTH_AGENT_TOKEN: "",
+    MAUTH_UNSAFE_ALLOW_UNAUTHENTICATED: "1",
+    MAUTH_DOCUMENTS_ROOT: path.join(output, "Home"),
+    MAUTH_WORKSPACE_STATE_ROOT: path.join(output, "State"),
+  };
   delete env.MATH_APP_STORAGE_ROOT;
   await launch(
     "uv",

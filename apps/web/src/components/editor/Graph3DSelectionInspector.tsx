@@ -1,6 +1,7 @@
 import type {
   ContentBlock,
   Graph3DDimensionData,
+  Graph3DData,
   Graph3DFaceData,
   Graph3DPointData,
   Graph3DSegmentData,
@@ -46,6 +47,7 @@ export function Graph3DSelectionInspector({
 }: Graph3DSelectionInspectorProps) {
   const selection = graph3dInspectorSelection(selectedDiagramConfig);
   const selectedElement = graph3dElementInspectorSelection(selectedDiagramConfig, activeAnchor);
+  const automaticEdges = (selectedDiagramConfig.data as Graph3DData | undefined)?.hiddenEdges === "auto";
   const updateCanvas = (patch: Partial<GraphConfig>) =>
     onBlockChange(selectedBlock, { graphConfig: updateGraphConfig(selectedDiagramConfig, patch) });
   const updateElement = (patch: Partial<Graph3DElement>) => {
@@ -96,7 +98,7 @@ export function Graph3DSelectionInspector({
             />
           </label>
         ) : null}
-        {segment || (dimension && dimensionDisplay === "bracket") ? (
+        {(segment && !automaticEdges) || (dimension && dimensionDisplay === "bracket") ? (
           <label className={checkboxLabelClassName}>
             <input
               type="checkbox"
@@ -167,6 +169,26 @@ export function Graph3DSelectionInspector({
   return (
     <div className="space-y-3 border-t pt-3">
       <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{selection.title}</div>
+      <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
+        Hidden edges
+        <select
+          aria-label="3D hidden edges"
+          value={automaticEdges ? "auto" : "manual"}
+          onChange={(event) =>
+            updateCanvas({ data: { ...selectedDiagramConfig.data, hiddenEdges: event.target.value as "auto" | "manual" } })
+          }
+          className={controlClassName}
+        >
+          <option value="manual">Manual segment styles</option>
+          <option value="auto">Automatic</option>
+        </select>
+      </label>
+      {automaticEdges ? (
+        <p className="text-xs leading-5 text-muted-foreground">
+          Visible edges are solid; hidden edges are dashed as you rotate. Include every face of the solid. Measurement guides keep their own
+          style.
+        </p>
+      ) : null}
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
           Frame width

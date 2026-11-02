@@ -1,6 +1,6 @@
 import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { FormattingConfig } from "@mauth-studio/shared";
+import type { FormattingConfig, GraphConfig } from "@mauth-studio/shared";
 
 import { FrontMatterInlineText, MixedMath, SolutionMarkTicks } from "@/components/MathText";
 import {
@@ -460,6 +460,7 @@ interface PaginatedTestPreviewProps {
   showSolutions?: boolean;
   activePreviewAnchor?: string;
   onGraphConfigChange?: (change: PreviewGraphConfigChange) => void;
+  onInvestigationGraphConfigChange?: (anchor: string, graphConfig: GraphConfig) => void;
   onPaginationReport?: (report: PreviewPaginationReport) => void;
 }
 
@@ -476,6 +477,7 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
   showSolutions = true,
   activePreviewAnchor,
   onGraphConfigChange,
+  onInvestigationGraphConfigChange,
   onPaginationReport,
 }: PaginatedTestPreviewProps) {
   const measureRef = useRef<HTMLDivElement>(null);
@@ -639,6 +641,7 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
           showSolutions={showSolutions}
           showPageBreaks={pageFormat.showPageBreaks}
           activePreviewAnchor={activePreviewAnchor}
+          onGraphConfigChange={onInvestigationGraphConfigChange}
           style={previewStyle}
         />
       </>

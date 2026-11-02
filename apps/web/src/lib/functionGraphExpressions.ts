@@ -1,122 +1,159 @@
 import type { GraphConfig } from "@mauth-studio/shared";
 
-function skipSpaces(expression: string, index: number) {
-  let cursor = index;
-  while (cursor < expression.length && /\s/.test(expression[cursor])) cursor += 1;
-  return cursor;
-}
+// Compile a restricted mathematical grammar into closures. Document text must never
+// be compiled as JavaScript: the preview runs with the editor's API authority.
+type MathNode = (x: number, y: number) => number;
+const graphFunctions = new Map<string, (value: number) => number>([
+  ["sin", Math.sin],
+  ["cos", Math.cos],
+  ["tan", Math.tan],
+  ["asin", Math.asin],
+  ["acos", Math.acos],
+  ["atan", Math.atan],
+  ["sqrt", Math.sqrt],
+  ["abs", Math.abs],
+  ["log", Math.log],
+  ["ln", Math.log],
+  ["log10", Math.log10],
+  ["exp", Math.exp],
+  ["sinh", Math.sinh],
+  ["cosh", Math.cosh],
+  ["tanh", Math.tanh],
+  ["floor", Math.floor],
+  ["ceil", Math.ceil],
+  ["round", Math.round],
+  ["trunc", Math.trunc],
+  ["sign", Math.sign],
+  ["cbrt", Math.cbrt],
+  ["log2", Math.log2],
+]);
 
-function matchingParenthesisEnd(expression: string, startIndex: number) {
-  let depth = 0;
-  for (let index = startIndex; index < expression.length; index += 1) {
-    if (expression[index] === "(") depth += 1;
-    if (expression[index] === ")") {
-      depth -= 1;
-      if (depth === 0) return index + 1;
-    }
-  }
-  return startIndex + 1;
-}
-
-function readIdentifierOrNumberEnd(expression: string, startIndex: number) {
-  let cursor = startIndex;
-  while (cursor < expression.length && /[A-Za-z0-9_.]/.test(expression[cursor])) cursor += 1;
-  cursor = skipSpaces(expression, cursor);
-  if (expression[cursor] === "(") return matchingParenthesisEnd(expression, cursor);
-  return cursor;
-}
-
-function readPowerTermEnd(expression: string, startIndex: number) {
-  let cursor = skipSpaces(expression, startIndex);
-  if (expression[cursor] === "+" || expression[cursor] === "-") cursor = skipSpaces(expression, cursor + 1);
-  if (expression[cursor] === "(") return matchingParenthesisEnd(expression, cursor);
-  return readIdentifierOrNumberEnd(expression, cursor);
-}
-
-function isUnaryMinusContext(expression: string, index: number) {
-  const previous = expression.slice(0, index).trimEnd().at(-1);
-  return !previous || "+-*/,(=".includes(previous);
-}
-
-function normalizeUnaryMinusBeforePowers(expression: string) {
-  let normalized = expression;
-  let index = 0;
-
-  while (index < normalized.length) {
-    if (normalized[index] !== "-" || !isUnaryMinusContext(normalized, index)) {
-      index += 1;
-      continue;
-    }
-
-    const baseStart = skipSpaces(normalized, index + 1);
-    const baseEnd = readPowerTermEnd(normalized, baseStart);
-    const operatorStart = skipSpaces(normalized, baseEnd);
-    if (normalized.slice(operatorStart, operatorStart + 2) !== "**") {
-      index += 1;
-      continue;
-    }
-
-    const exponentStart = skipSpaces(normalized, operatorStart + 2);
-    const exponentEnd = readPowerTermEnd(normalized, exponentStart);
-    const base = normalized.slice(baseStart, baseEnd);
-    const exponent = normalized.slice(exponentStart, exponentEnd);
-    const replacement = `-(${base}**${exponent})`;
-    normalized = `${normalized.slice(0, index)}${replacement}${normalized.slice(exponentEnd)}`;
-    index += replacement.length;
+class GraphExpressionParser {
+  private index = 0;
+  private readonly source: string;
+  private readonly allowY: boolean;
+  constructor(source: string, allowY: boolean) {
+    if (!source.trim() || source.length > 512) throw new Error("Invalid graph expression");
+    this.source = source;
+    this.allowY = allowY;
   }
 
-  return normalized;
-}
+  parse(): MathNode {
+    const result = this.sum();
+    this.space();
+    if (this.index !== this.source.length) throw new Error("Unexpected graph expression input");
+    return result;
+  }
 
-function normalizeImplicitXYMultiplication(expression: string) {
-  let normalized = "";
-
-  const nonWhitespaceAfter = (index: number) => {
-    let cursor = index + 1;
-    while (cursor < expression.length && /\s/.test(expression[cursor])) cursor += 1;
-    return cursor < expression.length ? cursor : -1;
-  };
-  const isIdentifierLetter = (value: string | undefined) => Boolean(value && /[A-Za-z_.]/.test(value));
-  const isXYVariable = (index: number) => {
-    const value = expression[index]?.toLowerCase();
-    if (value !== "x" && value !== "y") return false;
-    const previous = expression[index - 1];
-    const next = expression[index + 1];
-    if (isIdentifierLetter(previous) && previous.toLowerCase() !== "x" && previous.toLowerCase() !== "y") return false;
-    if (isIdentifierLetter(next) && next.toLowerCase() !== "x" && next.toLowerCase() !== "y") return false;
+  private space() {
+    while (/\s/.test(this.source[this.index] ?? "")) this.index++;
+  }
+  private take(token: string) {
+    this.space();
+    if (!this.source.startsWith(token, this.index)) return false;
+    this.index += token.length;
     return true;
-  };
-
-  for (let index = 0; index < expression.length; index += 1) {
-    normalized += expression[index];
-    const nextIndex = nonWhitespaceAfter(index);
-    if (nextIndex === -1) continue;
-    const current = expression[index];
-    const next = expression[nextIndex];
-    const leftFactor = /\d/.test(current) || current === ")" || isXYVariable(index);
-    const rightFactor = next === "(" || isXYVariable(nextIndex) || (/\d/.test(next) && (current === ")" || isXYVariable(index)));
-    if (leftFactor && rightFactor) normalized += "*";
   }
-
-  return normalized;
-}
-
-function toJavaScriptExpression(expression: string) {
-  const jsExpression = normalizeImplicitXYMultiplication(expression)
-    .replace(/\*\*/g, "^")
-    .replace(/\^/g, "**")
-    .replace(/\bpi\b/gi, "Math.PI")
-    .replace(/\be\b/g, "Math.E")
-    .replace(/\bln\(/gi, "Math.log(")
-    .replace(/\blog10\(/gi, "Math.log10(")
-    .replace(/\b(sin|cos|tan|asin|acos|atan|sqrt|abs|log|exp)\(/g, "Math.$1(");
-
-  return normalizeUnaryMinusBeforePowers(jsExpression);
+  private sum(): MathNode {
+    let left = this.product();
+    while (true) {
+      if (this.take("+")) {
+        const a = left,
+          b = this.product();
+        left = (x, y) => a(x, y) + b(x, y);
+      } else if (this.take("-")) {
+        const a = left,
+          b = this.product();
+        left = (x, y) => a(x, y) - b(x, y);
+      } else return left;
+    }
+  }
+  private product(): MathNode {
+    let left = this.unary();
+    while (true) {
+      this.space();
+      if (this.source.startsWith("**", this.index)) return left;
+      if (this.take("*")) {
+        const a = left,
+          b = this.unary();
+        left = (x, y) => a(x, y) * b(x, y);
+      } else if (this.take("/")) {
+        const a = left,
+          b = this.unary();
+        left = (x, y) => a(x, y) / b(x, y);
+      } else if (/^[.(0-9xy]/i.test(this.source.slice(this.index))) {
+        const a = left,
+          b = this.unary();
+        left = (x, y) => a(x, y) * b(x, y);
+      } else return left;
+    }
+  }
+  private unary(): MathNode {
+    if (this.take("+")) return this.unary();
+    if (this.take("-")) {
+      const a = this.unary();
+      return (x, y) => -a(x, y);
+    }
+    return this.power();
+  }
+  private power(): MathNode {
+    const a = this.primary();
+    if (this.take("**") || this.take("^")) {
+      const b = this.unary();
+      return (x, y) => a(x, y) ** b(x, y);
+    }
+    return a;
+  }
+  private primary(): MathNode {
+    this.space();
+    if (this.take("(")) {
+      const node = this.sum();
+      if (!this.take(")")) throw new Error("Missing closing parenthesis");
+      return node;
+    }
+    const rest = this.source.slice(this.index);
+    const number = rest.match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/);
+    if (number) {
+      this.index += number[0].length;
+      const value = Number(number[0]);
+      return () => value;
+    }
+    const fn = rest.match(
+      /^(?:Math\.)?(asin|acos|atan|sinh|cosh|tanh|sqrt|log10|floor|round|trunc|sign|ceil|cbrt|log2|sin|cos|tan|abs|log|exp|ln)(?=\s*\()/i,
+    );
+    if (fn) {
+      this.index += fn[0].length;
+      if (!this.take("(")) throw new Error("Expected function argument");
+      const arg = this.sum();
+      if (!this.take(")")) throw new Error("Missing function parenthesis");
+      const operation = graphFunctions.get(fn[1].toLowerCase());
+      if (!operation) throw new Error("Unknown function");
+      return (x, y) => operation(arg(x, y));
+    }
+    const constant = rest.match(/^pi/i);
+    if (constant) {
+      this.index += constant[0].length;
+      return () => Math.PI;
+    }
+    if (rest[0] === "e") {
+      this.index++;
+      return () => Math.E;
+    }
+    if (rest[0] === "x") {
+      this.index++;
+      return (x) => x;
+    }
+    if (rest[0] === "y" && this.allowY) {
+      this.index++;
+      return (_x, y) => y;
+    }
+    throw new Error("Invalid graph expression");
+  }
 }
 
 export function createEvaluator(expression: string) {
-  const jsExpression = toJavaScriptExpression(expression);
-  return new Function("x", `"use strict"; return (${jsExpression});`) as (x: number) => number;
+  const evaluator = new GraphExpressionParser(expression, false).parse();
+  return (x: number) => evaluator(x, 0);
 }
 
 function singleEqualsIndex(expression: string) {
@@ -141,8 +178,7 @@ function relationExpressionToZero(expression: string) {
 }
 
 export function createImplicitEvaluator(expression: string) {
-  const jsExpression = toJavaScriptExpression(relationExpressionToZero(expression));
-  const evaluator = new Function("x", "y", `"use strict"; return (${jsExpression});`) as (x: number, y: number) => number;
+  const evaluator = new GraphExpressionParser(relationExpressionToZero(expression), true).parse();
   return (x: number, y: number) => {
     try {
       const value = evaluator(x, y);
@@ -160,8 +196,7 @@ function slopeFieldExpression(expression: string) {
 }
 
 export function createSlopeFieldEvaluator(expression: string) {
-  const jsExpression = toJavaScriptExpression(slopeFieldExpression(expression));
-  const evaluator = new Function("x", "y", `"use strict"; return (${jsExpression});`) as (x: number, y: number) => number;
+  const evaluator = new GraphExpressionParser(slopeFieldExpression(expression), true).parse();
   return (x: number, y: number) => {
     try {
       const value = evaluator(x, y);

@@ -66,7 +66,7 @@ import {
   type Geometry2DPrimitiveTarget,
 } from "./diagramGeometry2d.ts";
 import { DEFAULT_IMAGE_DIAGRAM, imageAnnotationAt, imageAnnotationIndexById, updateImageAnnotation } from "./diagramImage.ts";
-import { DEFAULT_PENROSE_SCALE_PERCENT } from "./diagramPenrose.ts";
+import { DEFAULT_PENROSE_SCALE_PERCENT, penroseLabelPositionPatch, penroseResetLabelPositionsPatch } from "./diagramPenrose.ts";
 import {
   penroseElementIndex,
   updatePenroseElement,
@@ -119,7 +119,6 @@ import {
   imageSizePatch,
   inspectorOptionalNumber,
   inspectorSpaceLines,
-  networkPresetPatch,
   networkVisibilityPatch,
   penroseResamplePatch,
   penroseScalePatch,
@@ -293,6 +292,7 @@ interface Vector2DSettingsUpdate extends Bounded2DSettingsUpdate {
 }
 
 interface Graph3DSettingsUpdate extends SizedSettingsUpdate {
+  hiddenEdges?: "auto" | "manual";
   showAxes?: boolean;
   showAxisLabels?: boolean;
   view?: Partial<Graph3DViewState>;
@@ -336,6 +336,8 @@ interface PenroseSettingsUpdate {
   original?: boolean;
   resample?: boolean;
   variation?: string;
+  labelOffset?: { id: string; offset: [number, number] | null };
+  resetLabelPositions?: boolean;
   element?: PenroseElementSettingsUpdate;
 }
 
@@ -347,7 +349,6 @@ interface PenroseElementSettingsUpdate extends Record<string, unknown> {
 }
 
 interface NetworkSettingsUpdate {
-  preset?: boolean;
   showNodeDots?: boolean;
   showNodeLabels?: boolean;
 }
@@ -833,6 +834,7 @@ function graph3dBaseSettingsPatch(config: GraphConfig, settings: Graph3DSettings
   setIfDefined(sizePatch, "heightPx", settings.heightPx ?? (settings.heightPx === undefined ? undefined : DEFAULT_3D_GRAPH.heightPx));
   setIfDefined(sizePatch, "showAxes", settings.showAxes);
   setIfDefined(sizePatch, "showAxisLabels", settings.showAxisLabels);
+  if (settings.hiddenEdges !== undefined) sizePatch.data = { ...config.data, hiddenEdges: settings.hiddenEdges };
   if (Object.keys(sizePatch).length) patches.push(sizePatch);
   if (settings.resetView) patches.push(graph3dResetViewPatch(config));
   if (settings.view) {
@@ -981,9 +983,10 @@ function graph3dSettingsPatch(config: GraphConfig, settings: Graph3DSettingsUpda
     graph3dElementPatchRecord(settings.element, targetResult.idUsedAsTarget),
   );
   if (Object.keys(elementPatch).length) {
+    const configWithBaseSettings = mergePatch(config, patch);
     const nextId = targetResult.target.kind === "point" && typeof elementPatch.id === "string" ? elementPatch.id : "";
-    const renameData = nextId ? graph3dDataWithRenamedPoint(config, targetResult.target.index, nextId) : undefined;
-    const configAfterRename = renameData ? { ...config, data: renameData } : config;
+    const renameData = nextId ? graph3dDataWithRenamedPoint(configWithBaseSettings, targetResult.target.index, nextId) : undefined;
+    const configAfterRename = renameData ? { ...configWithBaseSettings, data: renameData } : configWithBaseSettings;
     const elementPatchWithoutId = { ...elementPatch };
     delete elementPatchWithoutId.id;
     patch.data = updateGraph3DElement(configAfterRename, targetResult.target, nextId ? elementPatchWithoutId : elementPatch);
@@ -1194,8 +1197,11 @@ function penroseSettingsPatch(config: GraphConfig, settings: PenroseSettingsUpda
     nextConfig = applyPatchAccumulator(nextConfig, penroseScalePatch(nextConfig, settings.scalePercent), patches);
   }
   if (settings.resample) {
-    applyPatchAccumulator(nextConfig, penroseResamplePatch(nextConfig, settings.variation), patches);
+    nextConfig = applyPatchAccumulator(nextConfig, penroseResamplePatch(nextConfig, settings.variation), patches);
   }
+  if (settings.resetLabelPositions) nextConfig = applyPatchAccumulator(nextConfig, penroseResetLabelPositionsPatch(nextConfig), patches);
+  if (settings.labelOffset)
+    applyPatchAccumulator(nextConfig, penroseLabelPositionPatch(nextConfig, settings.labelOffset.id, settings.labelOffset.offset), patches);
   return compactGraphPatch(patches);
 }
 
@@ -1213,6 +1219,8 @@ function penroseElementPatchRecord(source: PenroseElementSettingsUpdate, idUsedA
 }
 
 function penroseElementSettingsPatch(config: GraphConfig, settings: PenroseSettingsUpdate): DiagramSettingsPatchSuccess | SettingsFailure {
+  if (config.type === "network" && "preset" in settings)
+    return settingsFailure("Network preset replacement is no longer supported. Use resample to rearrange the existing network.");
   const basePatch =
     config.type === "network"
       ? networkSettingsPatch(config, settings as PenroseSettingsUpdate & NetworkSettingsUpdate)
@@ -1250,8 +1258,7 @@ function penroseElementSettingsPatch(config: GraphConfig, settings: PenroseSetti
 function networkSettingsPatch(config: GraphConfig, settings: PenroseSettingsUpdate & NetworkSettingsUpdate): GraphPatch {
   const penrosePatch = penroseSettingsPatch(config, settings);
   const patches: GraphPatch[] = [penrosePatch];
-  let nextConfig = mergePatch(config, penrosePatch);
-  if (settings.preset) nextConfig = applyPatchAccumulator(nextConfig, networkPresetPatch(nextConfig), patches);
+  const nextConfig = mergePatch(config, penrosePatch);
   if (settings.showNodeDots !== undefined || settings.showNodeLabels !== undefined) {
     const visibilityPatch: Parameters<typeof networkVisibilityPatch>[1] = {};
     if (settings.showNodeDots !== undefined) visibilityPatch.hidePoints = !settings.showNodeDots;

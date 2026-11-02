@@ -1,3 +1,5 @@
+import { diagramToolGuide } from "../../../../packages/shared/src/diagramTools.ts";
+import type { DiagramRequirements } from "../../../../packages/shared/src/diagramCapabilities.ts";
 import type { GraphConfig } from "@mauth-studio/shared";
 
 import {
@@ -1447,7 +1449,24 @@ function inspectSetDiagram(config: GraphConfig, contextText: string): MauthDiagr
   return warnings;
 }
 
-function intentWarnings(config: GraphConfig, contextText: string) {
+function intentWarnings(config: GraphConfig, contextText: string, requirements?: DiagramRequirements) {
+  if (requirements) {
+    const guide = diagramToolGuide(contextText, config.type, false, requirements, Boolean(config.options?.substanceSource));
+    const selected = guide.assessment.selectedToolAssessment;
+    return {
+      intent: diagramIntentFromText(contextText),
+      warnings: selected?.eligible
+        ? []
+        : [
+            {
+              code: "diagram-renderer-mismatch",
+              severity: "warning" as const,
+              message: `The selected tool does not satisfy the requested capabilities: ${selected?.missingFeatures.join(", ") || guide.assessment.uncertainty.join(" ")}`,
+              path: "graphConfig.type",
+            },
+          ],
+    };
+  }
   const intent = diagramIntentFromText(contextText);
   if (!intent || config.type === intent.expectedType) return { intent, warnings: [] as MauthDiagramInspectionWarning[] };
   return {
@@ -1463,8 +1482,8 @@ function intentWarnings(config: GraphConfig, contextText: string) {
   };
 }
 
-export function inspectMauthDiagram(config: GraphConfig, contextText: string): MauthDiagramInspection {
-  const intent = intentWarnings(config, contextText);
+export function inspectMauthDiagram(config: GraphConfig, contextText: string, requirements?: DiagramRequirements): MauthDiagramInspection {
+  const intent = intentWarnings(config, contextText, requirements);
   const semantic = inspectDiagramSemantics(config, contextText);
   const warnings = [
     ...intent.warnings,

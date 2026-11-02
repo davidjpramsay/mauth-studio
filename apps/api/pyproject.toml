@@ -29,7 +29,8 @@ pythonpath = [
     "app",
     "../../packages/question-engine",
     "../../packages/formatting-engine",
-    "../../packages/marking-engine"
+    "../../packages/marking-engine",
+    "../../packages/math-parser"
 ]
 testpaths = ["tests"]
 

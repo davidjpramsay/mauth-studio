@@ -2,30 +2,23 @@ import re
 from typing import Any
 
 import sympy as sp
+from mauth_math import InvalidMathExpression, parse_math_expression, validate_symbolic_expression
 from sympy.parsing.latex import parse_latex
-from sympy.parsing.sympy_parser import (
-    convert_xor,
-    implicit_multiplication_application,
-    parse_expr,
-    standard_transformations,
-)
-
-TRANSFORMATIONS = standard_transformations + (
-    implicit_multiplication_application,
-    convert_xor,
-)
 
 
 def parse_expression(expression: str, input_format: str = "plain") -> Any:
     source = expression.strip()
+    if not source or len(source) > 512:
+        raise InvalidMathExpression("Invalid mathematical expression")
     if input_format == "latex":
         try:
-            return parse_latex(source)
+            parsed = parse_latex(source)
         except Exception:
             source = latex_to_plain(source)
+        else:
+            return validate_symbolic_expression(parsed)
 
-    source = source.replace("^", "**")
-    return parse_expr(source, transformations=TRANSFORMATIONS, evaluate=True)
+    return parse_math_expression(source)
 
 
 def parse_equation_or_expression(expression: str, input_format: str = "plain") -> Any:

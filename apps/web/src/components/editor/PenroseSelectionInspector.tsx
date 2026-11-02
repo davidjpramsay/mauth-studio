@@ -2,10 +2,15 @@ import type { ContentBlock, GraphConfig } from "@mauth-studio/shared";
 import { Shuffle } from "lucide-react";
 
 import type { SelectedEditorBlock } from "../../lib/editorBlockSelection";
-import { DEFAULT_PENROSE_SCALE_PERCENT, penroseScalePercent } from "../../lib/diagramPenrose";
+import {
+  DEFAULT_PENROSE_SCALE_PERCENT,
+  penroseScalePercent,
+  penroseLabelOffsets,
+  penroseResetLabelPositionsPatch,
+  penroseSupportsLabelDragging,
+} from "../../lib/diagramPenrose";
 import {
   inspectorSetShadingOptions,
-  networkPresetPatch,
   networkVisibilityPatch,
   penroseResamplePatch,
   penroseScalePatch,
@@ -77,24 +82,25 @@ export function PenroseSelectionInspector({
           Original
         </Button>
       </div>
-      {selectedDiagramConfig.type === "geometricConstruction" ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() =>
-            onBlockChange(selectedBlock, {
-              graphConfig: updateGraphConfig(selectedDiagramConfig, penroseResamplePatch(selectedDiagramConfig)),
-            })
-          }
-        >
-          <Shuffle className="mr-2 size-4" aria-hidden="true" />
-          Resample
-        </Button>
-      ) : null}
-      {selectedDiagramConfig.type === "network" && selectedNetworkData ? (
-        <>
+      {penroseSupportsLabelDragging(selectedDiagramConfig.type) ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Drag labels in the preview to position them independently of the automatic layout.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={!Object.keys(penroseLabelOffsets(selectedDiagramConfig.options?.labelOffsets)).length}
+            onClick={() =>
+              onBlockChange(selectedBlock, {
+                graphConfig: updateGraphConfig(selectedDiagramConfig, penroseResetLabelPositionsPatch(selectedDiagramConfig)),
+              })
+            }
+          >
+            Reset label positions
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -102,12 +108,22 @@ export function PenroseSelectionInspector({
             className="w-full"
             onClick={() =>
               onBlockChange(selectedBlock, {
-                graphConfig: updateGraphConfig(selectedDiagramConfig, networkPresetPatch(selectedDiagramConfig)),
+                graphConfig: updateGraphConfig(selectedDiagramConfig, penroseResamplePatch(selectedDiagramConfig)),
               })
             }
           >
-            Network preset
+            <Shuffle className="mr-2 size-4" aria-hidden="true" />
+            Resample
           </Button>
+          {["network", "geometricConstruction"].includes(selectedDiagramConfig.type) ? (
+            <p className="text-xs text-muted-foreground">
+              Resample creates a new layout and resets label positions. Content stays the same. Undo restores the previous layout.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {selectedDiagramConfig.type === "network" && selectedNetworkData ? (
+        <>
           <label className={checkboxLabelClassName}>
             <input
               type="checkbox"
