@@ -73,6 +73,7 @@ import {
   groupPreviewPageSegments,
   investigationPreviewPageCount,
   isEndOfTestMarkerText,
+  isEndOfTestMarkerSegment,
   pagesAreEqual,
   previewPaginationReportsEqual,
   type PreviewPage,
@@ -594,8 +595,10 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
     [segments, visiblePages],
   );
 
-  const renderPreviewGroup = (group: AppPreviewQuestionSegmentGroup) => {
-    const content = group.entries.map(({ segment, segmentPageIndex }) => (
+  const renderPreviewGroup = (group: AppPreviewQuestionSegmentGroup, footerSegmentId?: string) => {
+    const entries = group.entries.filter(({ segment }) => segment.id !== footerSegmentId);
+    if (!entries.length) return null;
+    const content = entries.map(({ segment, segmentPageIndex }) => (
       <TestPreviewSegment
         key={segment.id}
         segment={segment}
@@ -681,10 +684,8 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
               const isLastQuestionPage = pageIndex === visiblePages.length - 1;
               const isLastRenderedPage = isLastQuestionPage && supplementaryPageCount === 0;
               const lastPageSegment = segments[page.segmentIndexes.at(-1) ?? -1];
-              const pageEndsWithEndOfTestMarker =
-                lastPageSegment?.kind === "question-block" &&
-                lastPageSegment.block?.kind === "text" &&
-                isEndOfTestMarkerText(lastPageSegment.block.text);
+              const footerSegment = isLastQuestionPage && isEndOfTestMarkerSegment(lastPageSegment) ? lastPageSegment : undefined;
+              const pageEndsWithEndOfTestMarker = Boolean(footerSegment);
               const pageNumber = frontMatterPageCount(frontMatter) + pageIndex + 1;
               return (
                 <Fragment key={`page-${pageIndex}`}>
@@ -700,12 +701,25 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
                       <div className="a4-page-content">
                         {isExamTemplate ? <SchoolExamRunningHeader exam={exam} pageNumber={pageNumber} /> : null}
                         <div className={cn("test-preview-flow", isExamTemplate && "school-exam-question-flow")}>
-                          <div className="test-preview-question-list">{groups.map(renderPreviewGroup)}</div>
+                          <div className="test-preview-question-list">
+                            {groups.map((group) => renderPreviewGroup(group, footerSegment?.id))}
+                          </div>
                         </div>
                         {page.overflow ? (
                           <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
                             A single block in this question is taller than the available A4 page space.
                           </div>
+                        ) : null}
+                        {footerSegment ? (
+                          <footer className="test-end-of-test-footer" aria-label="End of Test">
+                            <TestPreviewSegment
+                              segment={footerSegment}
+                              frontMatter={frontMatter}
+                              showSolutions={showSolutions}
+                              showMarks={showMarks}
+                              activePreviewAnchor={activePreviewAnchor}
+                            />
+                          </footer>
                         ) : null}
                         {isExamTemplate ? (
                           <SchoolExamPageFooter text={isLastQuestionPage ? exam.endOfQuestionsFooterText : exam.footerText} />
