@@ -180,6 +180,29 @@ test("renders structured supplemental line, point, and bar series", () => {
   assert.equal(config.data[2].width, 0.4);
 });
 
+test("clips every column source at the authored plot range without rebasing its values", () => {
+  const examples = [
+    { chartType: "histogram", dataMode: "manualFrequencies", xValues: [1, 2], frequencies: [120, 150], yRange: [100, 160] },
+    { chartType: "binomial", trials: 4, probability: 0.5, yRange: [0.1, 0.5] },
+    {
+      chartType: "blankAxes",
+      yRange: [100, 160],
+      series: [{ id: "counts", seriesType: "bars", xValues: [1, 2], yValues: [120, 150] }],
+    },
+  ];
+  for (const data of examples) {
+    const config = buildStatsChartPlotlyConfig({ type: "statsChart", data });
+    assert.equal(config.data[0].type, "bar");
+    assert.equal(config.data[0].cliponaxis, true);
+    if (data.chartType === "blankAxes") assert.deepEqual((config.layout.yaxis as { range: number[] }).range, [100, 160]);
+    if (data.chartType !== "binomial") assert.deepEqual(config.data[0].y, [120, 150]);
+  }
+  for (const chartType of ["normal", "density"]) {
+    const config = buildStatsChartPlotlyConfig({ type: "statsChart", data: { chartType } });
+    assert.equal(config.data[0].cliponaxis, false);
+  }
+});
+
 test("shades a deterministic interval under a normal curve without boundary strokes", () => {
   const config = buildStatsChartPlotlyConfig({
     type: "statsChart",

@@ -18,11 +18,12 @@ function withoutAxisTitle(axis: unknown) {
   };
 }
 
-function expandPlotClipRects(element: HTMLElement, resetBase = false) {
+function expandPlotClipRects(element: HTMLElement & { data?: Array<{ type?: string }> }, resetBase = false) {
   // Plotly clips line strokes exactly at the authored data range. Reserve enough
   // source-space allowance for print scaling so curve tails and heavy axes do not
-  // lose their outer pixels while labels remain contained by the layout margins.
-  const paddingPx = 8;
+  // lose their outer pixels. Columns need the exact plot boundary: an expanded
+  // clip lets a zero-based bar protrude below an intentionally truncated axis.
+  const paddingPx = element.data?.some((trace) => trace.type === "bar") ? 0 : 8;
   element.querySelectorAll<SVGRectElement>(".clips clipPath rect").forEach((rect) => {
     if (resetBase) {
       rect.removeAttribute("data-mauth-clip-x");

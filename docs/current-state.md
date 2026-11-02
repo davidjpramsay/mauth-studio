@@ -52,8 +52,18 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; graph typography, padding, print cleanup and authoring rules prepared for publication
+worktree: clean at this checkpoint; column clipping correction follows the published typography/padding source changes
 ```
+
+### 2 November Column Baseline Clipping
+
+Question 7 deliberately starts its vertical scale above zero to assess misleading graphs. Its columns protruded below the axis because bar traces disabled Plotly clipping and the renderer expanded every clip rectangle for curve strokes. Histogram, binomial and supplemental bars now enable clipping; charts containing bars retain the exact plot boundary. Absolute counts, axis ranges, labels and teacher files are unchanged.
+
+The regression reproduces the original below-axis fill at 1440/900 px, then passes with the fix in preview and Student/Solutions print. Pixel probes require visible column fill immediately above the baseline and none below it. The adapter suite has 12 passing tests, including all three column sources, retained truncated-axis data and unchanged normal/density curve behavior. Full `pnpm check` passes with 138 API, 750 web/action, 17 lifecycle, 12 Plotly, six Penrose, 84 launcher and five Quick Look tests, lint, formatting, TypeScript and production build. The broader browser run passes 72/76 checks, including both new column regressions and both chart-spacing checks. Three unrelated failures pass isolated rechecks; the structured Penrose boundary-drag check still encounters a detached label/frame during its bounding-box read. That unresolved test remains separate from this Plotly correction; do not report the entire browser suite as passing.
+
+All four Year 10 PDFs were exported again, visually inspected on Question 7 and retained nine A4 pages, 45 marks, 50 minutes and identical extracted text. They include the latest correlation-coefficient questions, omitted redundant stacked-column heading, centred segment labels and aligned 300-by-240 Question 4 charts with Age/Value axis titles. Teacher files remain practice revision 11, actual revision 10 and showcase revision 8. Evidence and PDF backups are in `tmp/bivariate-bar-clipping-20261102`.
+
+The hardened local build is installed and reopened under the teacher's existing normal-quit/install/reopen authorisation. Strict signature verification passes and all 496 checked bundle files match the build. All five recovery/document files were unchanged during installation; after reopening, all three documents retain exact content, identities, revisions, dirty states, saved-file baselines, tab order and active actual test. Recovery timestamps refreshed normally. Native screenshot verification shows Question 7's bars meeting the 100 baseline. The connector doctor and live MCP smoke pass; recursive file listing also succeeds, confirming that the earlier Documents permission gate is resolved. Installation/recovery evidence is under `/private/tmp/mauth-release-20261102/bar-*`. Public installer publication still depends on the missing notarization profile described below.
 
 ### 2 November Publication Preparation
 

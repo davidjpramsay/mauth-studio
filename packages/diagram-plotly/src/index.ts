@@ -906,7 +906,7 @@ function baseChartTraces(spec: StatsChartSpec) {
           line: markerLine,
         },
         hoverinfo: "skip",
-        cliponaxis: false,
+        cliponaxis: true,
         name: data.title || "Probability",
       },
     ];
@@ -926,7 +926,7 @@ function baseChartTraces(spec: StatsChartSpec) {
         line: markerLine,
       },
       hoverinfo: "skip",
-      cliponaxis: false,
+      cliponaxis: true,
       name: data.title || (histogram.manual ? "Probability" : histogram.relative ? "Relative frequency" : "Frequency"),
     },
   ];
@@ -949,7 +949,7 @@ function supplementalSeriesTraces(data: StatsChartData) {
             line: { color, width: 1.4 },
           },
           hoverinfo: "skip",
-          cliponaxis: false,
+          cliponaxis: true,
           name,
           meta: { mauthSeriesId: series.id },
         };
