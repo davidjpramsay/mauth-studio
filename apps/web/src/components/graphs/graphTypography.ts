@@ -1,7 +1,7 @@
 export const GRAPH_LABEL_FONT_SIZE_PT = 10;
 export const GRAPH_LABEL_FONT_UNIT = "pt";
 export const TEST_TEXT_FONT_FAMILY = "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-export const GRAPH_LABEL_FONT_CSS = `font-size: ${GRAPH_LABEL_FONT_SIZE_PT}pt; font-family: ${TEST_TEXT_FONT_FAMILY};`;
+export const GRAPH_LABEL_FONT_CSS = `font-size: ${GRAPH_LABEL_FONT_SIZE_PT}pt; font-family: ${TEST_TEXT_FONT_FAMILY}; font-weight: 400; font-style: normal;`;
 
 export function graphLabelAttributes(extraCss = "") {
   return {
@@ -27,8 +27,12 @@ function endsWithUnescapedDollar(value: string) {
 
 export function stripGraphLatexDelimiters(value: string) {
   const trimmed = value.trim();
-  if (trimmed.length >= 4 && trimmed.startsWith("$$") && trimmed.endsWith("$$")) return trimmed.slice(2, -2).trim();
-  if (trimmed.length >= 2 && trimmed.startsWith("$") && endsWithUnescapedDollar(trimmed)) return trimmed.slice(1, -1).trim();
+  if (trimmed.startsWith("$") && endsWithUnescapedDollar(trimmed)) {
+    GRAPH_DELIMITED_MATH_PATTERN.lastIndex = 0;
+    const matches = Array.from(trimmed.matchAll(GRAPH_DELIMITED_MATH_PATTERN));
+    if (matches.length === 1 && matches[0][0] === trimmed)
+      return trimmed.startsWith("$$") ? trimmed.slice(2, -2).trim() : trimmed.slice(1, -1).trim();
+  }
   if (trimmed.startsWith("\\(") && trimmed.endsWith("\\)")) return trimmed.slice(2, -2).trim();
   if (trimmed.startsWith("\\[") && trimmed.endsWith("\\]")) return trimmed.slice(2, -2).trim();
   return trimmed;
@@ -78,4 +82,66 @@ export function graphLabelSourceLatex(value?: string) {
   }
 
   return looksLikeBareGraphLatex(trimmed) ? trimmed : graphTextLatex(trimmed);
+}
+
+export interface GraphLabelSegment {
+  kind: "text" | "math";
+  source: string;
+}
+
+// Decode only ordinary text and literal TeX escapes. Formatting commands and
+// nested mathematical groups remain MathJax's responsibility.
+function graphPlainTextGroup(source: string, start: number) {
+  let text = "";
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "}") return { text, end: index + 1 };
+    if (char === "{") return null;
+    if (char !== "\\") {
+      text += char;
+      continue;
+    }
+    if (source.startsWith("\\textbackslash{}", index)) {
+      text += "\\";
+      index += "\\textbackslash{}".length - 1;
+    } else if (/[{}_%&#$\\ ]/.test(source[index + 1] ?? "")) {
+      text += source[++index];
+    } else return null;
+  }
+  return null;
+}
+
+export function graphLabelSegments(value: string, forceMath = false, sourceIsLatex = false): GraphLabelSegment[] {
+  const source = forceMath ? stripGraphLatexDelimiters(value) : sourceIsLatex ? value : graphLabelSourceLatex(value);
+  if (!source) return [];
+  if (forceMath) return [{ kind: "math", source }];
+  const segments: GraphLabelSegment[] = [];
+  let depth = 0;
+  let environmentDepth = 0;
+  let mathStart = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "\\") {
+      const environment = source.slice(index).match(/^\\(begin|end)\s*\{[^{}]*\}/);
+      if (environment) {
+        environmentDepth = Math.max(0, environmentDepth + (environment[1] === "begin" ? 1 : -1));
+        index += environment[0].length - 1;
+        continue;
+      }
+      if (depth === 0 && environmentDepth === 0 && source.startsWith("\\text{", index)) {
+        const group = graphPlainTextGroup(source, index + 6);
+        if (group) {
+          if (index > mathStart) segments.push({ kind: "math", source: source.slice(mathStart, index) });
+          if (group.text) segments.push({ kind: "text", source: group.text });
+          index = group.end - 1;
+          mathStart = group.end;
+          continue;
+        }
+      }
+      // Escaped braces are literals rather than group boundaries.
+      if (source[index + 1] === "{" || source[index + 1] === "}") index += 1;
+    } else if (source[index] === "{") depth += 1;
+    else if (source[index] === "}") depth -= 1;
+  }
+  if (mathStart < source.length) segments.push({ kind: "math", source: source.slice(mathStart) });
+  return segments;
 }

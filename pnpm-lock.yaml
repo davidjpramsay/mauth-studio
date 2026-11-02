@@ -10,6 +10,11 @@ overrides:
   js-yaml@>=4 <4.3.1: 4.3.1
   '@xmldom/xmldom@>=0.9 <0.9.12': 0.9.12
 
+patchedDependencies:
+  jsxgraph@1.12.2:
+    hash: 9fb8831ea4024383b0315829a1b92d66558bbc5f6d640c73faee53bd9a97474a
+    path: patches/jsxgraph@1.12.2.patch
+
 importers:
 
   .:
@@ -88,8 +93,8 @@ importers:
         specifier: 3.4.17
         version: 3.4.17
       jsxgraph:
-        specifier: latest
-        version: 1.12.2
+        specifier: 1.12.2
+        version: 1.12.2(patch_hash=9fb8831ea4024383b0315829a1b92d66558bbc5f6d640c73faee53bd9a97474a)
       lucide-react:
         specifier: latest
         version: 1.12.0(react@19.2.5)
@@ -1874,10 +1879,6 @@ packages:
   jsxgraph@1.12.2:
     resolution: {integrity: sha512-7kTscexFVBHirsBrxZFQg2hA6Mf/Pa2piojNgxHZ9i/rQfxDAaq7p8oD9/009clQTFQ9fNLUpmDKwV+84zA2Gg==}
     engines: {node: '>=0.6.0'}
-
-  jsxgraph@1.13.3:
-    resolution: {integrity: sha512-sUVTxB5mDPL5WIEeuo9nprymRymU1ojU2YDtpcK6JzcIe3DkxpQ/2uolGuJ3R0lH6tb3wCGY+1PgVhCVic6yjg==}
-    engines: {node: '>=20.19.0'}
 
   jsxgraph@1.14.2:
     resolution: {integrity: sha512-OqhkRB5Qcp8dxe5ff9qdG1v/4yLrw2HDcApBoeZWRa3IzLSdIA8TXPwjspsM1XvEcV/eTPwsUFe1aiYejV2TLw==}
@@ -4896,11 +4897,7 @@ snapshots:
     optionalDependencies:
       graceful-fs: 4.2.11
 
-  jsxgraph@1.12.2:
-    dependencies:
-      jsxgraph: 1.13.3
-
-  jsxgraph@1.13.3:
+  jsxgraph@1.12.2(patch_hash=9fb8831ea4024383b0315829a1b92d66558bbc5f6d640c73faee53bd9a97474a):
     dependencies:
       jsxgraph: 1.14.2
 

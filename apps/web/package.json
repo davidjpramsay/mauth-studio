@@ -16,7 +16,7 @@
     "class-variance-authority": "latest",
     "clsx": "latest",
     "dompurify": "3.4.17",
-    "jsxgraph": "latest",
+    "jsxgraph": "1.12.2",
     "lucide-react": "latest",
     "mathjax-full": "3.2.2",
     "plotly.js-dist-min": "latest",

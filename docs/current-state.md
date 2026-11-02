@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 29 October 2026.
+Last reviewed: 2 November 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -52,12 +52,36 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; Penrose SVG follow-up verified in source, local update pending
+worktree: clean at this checkpoint; graph typography, padding, print cleanup and authoring rules prepared for publication
 ```
+
+### 2 November Publication Preparation
+
+The teacher authorised committing, pushing and deploying the accumulated app changes and rules. The installed app remains the primary authoring workspace; AGENTS.md and the local workflow now require explaining isolated browser checks and distinguishing their evidence from native verification. Diagram-brain guidance now gives stacked-column labels generous horizontal room and normally centres them within their own segments, preserving percentage heights, data and deliberate teacher choices.
+
+The disposed-board print resize failure is reproduced by retaining real media-query objects across repeated Student/Solutions switches, print events and width changes. JSXGraph is pinned to the existing 1.12.2 version with the upstream listener-cleanup backport in `patches/jsxgraph@1.12.2.patch`; pnpm applies it to the ESM source used by Vite. A broader upgrade was evaluated but not retained. A queued idle camera save is also cancelled when a 3D gesture begins, preventing a mid-drag remount. Forced mathematical axis numbers strip delimiter metadata before rendering. The full quality gate passes, including 138 API, 750 web/action, 17 lifecycle, 11 Plotly, six Penrose, 84 launcher and five Quick Look tests. The four assessment print baselines were visually reviewed and refreshed for the intended graph presentation changes. All 74 browser regressions pass, including 1440/900 px labels, Student/Solutions print, repeated copy/print media changes, 3D rotation and hidden edges, geometry/network resampling, SVG/expression boundaries and native-file UI contracts. Typography, 3D rotation and all four changed assessment pages were visually inspected. Final evidence is under `/private/tmp/mauth-release-final-visual`. The hardened local build and installed signature checks pass; all 496 checked bundle files match the tested build. Normal quit, install and reopening used the teacher's existing authorisation. All five recovery/document files were unchanged during installation. After reopening, all three documents retain exact contents, identities, revisions, dirty states and saved-file baselines, with the actual test active. Recovery refreshed the active tab's navigation/status metadata and cleared its unused unsaved-document baseline. Recovery moved the active actual-test tab after the practice tab; this known cosmetic tab-order issue remains unresolved. The connector doctor passes all five checks. Native capture still shows an empty/stale window despite the healthy editor bridge, so final visual evidence comes from isolated browser/PDF checks rather than a fresh native screenshot. Recovery and install evidence are under `/private/tmp/mauth-release-20261102`.
+
+Public distribution is still blocked: live read-only notarization checks cannot find the documented `mauth-notary` profile, including when explicitly targeting the login Keychain. No Apple credential environment variables are configured. No credentials were recreated or security requirements weakened. The public release and download links remain at 0.1.5; 0.1.6 is prepared but unpublished. Resume `pnpm macos:ship` only from clean, pushed main after a working Apple profile is supplied and passes preflight.
+
+### 2 November Stacked-Column Layout
+
+The Year 10 practice/actual Question 2 columns are 80% wider, with prose labels centred horizontally and vertically within their percentage segments. Previewed, revision-protected module actions saved practice revision 8 and actual revision 7; readback confirms no unrelated content changed apart from normal save timestamps. All four PDFs retain nine A4 pages, 45 marks, 50 minutes and identical extracted question/solution text. Fresh Student/Solutions preview and print measurements put every segment label within 0.01 px of its centre, with at least 9.9 px vertical clearance; the exported pages were visually inspected. Evidence is under `/private/tmp/mauth-stacked-room-20261102`. Native accessibility reports the saved documents, but its screenshot remains stale; visual evidence comes from the matching isolated browser/PDF renders. The already noted disposed-board JSXGraph print-listener resize error recurred after print-media changes in the review harness; measured layouts and exports remained correct. This is a separate runtime follow-up. No app code or installation changed for this document-only layout edit.
+
+### 2 November Graph Label Typography
+
+Ordinary graph labels now use the document body font stack (Inter with system fallbacks), at the existing graph-label size and normal weight/style. Coordinate/geometry, vector and 3D graphs share one escaped-HTML prose renderer while variables, equations, fractions, vector notation and automatic axis numbers retain MathJax. Top-level legacy text-only `\text{...}` wrappers also use document text, so the Year 10 column graphs improve without document migration. Mixed labels preserve separate prose/math runs; nested TeX groups and formatting commands remain mathematical rendering. Label coordinates, stable drag targets, solution visibility and stored document data are unchanged. Two inline maths runs no longer swallow the prose between their delimiters.
+
+Eight focused typography tests and 13 browser regressions pass. Desktop/compact checks at 1440/900 px verify regular Inter prose, preserved mathematical fractions, literal HTML escaping, Student/Solutions preview and print, existing padding/grid boundaries and 2D/3D label dragging/persistence. The actual Year 10 Question 2 graph was visually inspected in an isolated copy with computed Inter/400 label styling and no browser warnings/errors. The full quality gate passes (138 API and 750 web/action tests plus the existing suites, lint, formatting, TypeScript and production build). All four assessment PDFs were freshly exported and visually inspected, retaining nine A4 pages each and the same question/solution text; prose graph labels are now extractable PDF text. Explicit mathematical labels such as `$12$` and `$AB$`, fractions and text within matrices remain MathJax. One compact vector teardown check hit a transient JSXGraph resize callback error; its focused rerun passed without errors. The signed local build and installation pass. The update was installed and reopened under the teacher's existing normal-quit/install/reopen authorisation. Strict signature verification passes; all 232 checked resource, executable and extension files match the tested bundle. All recovery and saved assessment files were byte-identical across installation. After reopening, all three documents retain exact contents, identities, revisions, dirty states, save baselines, tab order and active document; the connector doctor passes all five checks. Question 2 was visually verified in the installed app with body-font prose and clear labels. Recovery copies are under `/private/tmp/mauth-label-font-20261102/install-after-quit`, with the previous app archived in Launcher Backups. No public release was published.
+
+### 2 November Graph Label Padding
+
+The Year 10 stacked-column graph clipped the top of its free `Students (%)` heading when built-in axis names and numbers were hidden. Function/coordinate-geometry and vector renderers now share a minimum 24-pixel paper-size frame margin independent of axis visibility. Existing larger axis/geometry reserves remain authoritative. This changes the rendered viewport only, preserving authored bounds, coordinates, saved label positions and Student/Solutions alignment. Long or multiline annotations still need deliberate placement and render checks; the margin is not automatic text fitting.
+
+Six focused unit tests pass. Seven browser regressions at 1440/900 px cover free headings, function/vector names, existing Cartesian boundaries, label dragging/persistence and Student/Solutions print without changing stored document data. The reported heading was visually checked with positive top clearance and no browser warnings/errors. Both Year 10 documents also have extra vertical headroom saved through revision-aware project storage (practice revision 7, actual revision 6), so their graphs fit the installed renderer. The actual-test bridge request timed out after tab activation; its focused range change used the project-file API with an exact-content and revision precondition and readback verification. All four assessment PDFs were freshly exported: each retains nine A4 pages, one question per page and unchanged extracted question/solution text. The changed question pages were visually inspected in both copies. The full quality gate and signed local build/signature verification pass. The teacher explicitly authorised a normal quit, installation and reopening on 2 November, accepting loss of in-memory Undo. The update is installed in `~/Applications/Mauth Studio.app`; strict signature verification passes and all 232 checked resource, executable and extension files match the tested bundle. Recovery and assessment files were byte-identical across installation. After reopening, all three recovered documents retain exact content, file identities, revisions, dirty states and save baselines, with the same active practice test. The connector doctor passes all five checks, and Question 2 was visually checked in the installed app with its heading clear. Recovery reordered the two assessment tabs; native drag automation could not restore their order because it reported no available window. This cosmetic recovery issue remains separate from the graph fix. Recovery copies are under `/private/tmp/mauth-label-padding-20261102/install-after-quit`; the previous app is archived in Launcher Backups. No public release was published.
 
 ### 29 October Penrose SVG Boundary
 
-Imported Advanced Style can emit SVG event attributes. All three Penrose families now sanitize generated SVG after label presentation, immediately before insertion into the editor DOM. The shared DOMPurify policy removes active elements, event attributes, non-fragment links and arbitrary CSS while preserving local glyph/clip/mask references, safe typography and label/solution metadata. Document content and saved offsets are unchanged. Independent review caught and corrected over-restrictive geometry-attribute and local-glyph rules. Three focused browser security regressions pass against the actual producer, including alternate URL/CSS/namespace inputs and local glyph/font/clip controls. Five existing browser checks pass for geometry/network dragging, Undo/Redo, reopening/resampling, Venn masks and Student/Solutions print; representative geometry output was visually inspected. The full `pnpm check` quality gate passes (138 API tests and all existing web, diagram, launcher and native suites, lint, formatting, TypeScript and build). The hardened standalone Mac build and signing verification pass. Installation is pending because the teacher requested preservation of the running session's Undo history; the existing installed app is still active. Recovery copies are under `/private/tmp/mauth-svg-preinstall`. The running teacher session must not be restarted while its Undo history needs preserving.
+Imported Advanced Style can emit SVG event attributes. All three Penrose families now sanitize generated SVG after label presentation, immediately before insertion into the editor DOM. The shared DOMPurify policy removes active elements, event attributes, non-fragment links and arbitrary CSS while preserving local glyph/clip/mask references, safe typography and label/solution metadata. Document content and saved offsets are unchanged. Independent review caught and corrected over-restrictive geometry-attribute and local-glyph rules. Three focused browser security regressions pass against the actual producer, including alternate URL/CSS/namespace inputs and local glyph/font/clip controls. Five existing browser checks pass for geometry/network dragging, Undo/Redo, reopening/resampling, Venn masks and Student/Solutions print; representative geometry output was visually inspected. The full `pnpm check` quality gate passes (138 API tests and all existing web, diagram, launcher and native suites, lint, formatting, TypeScript and build). The hardened standalone Mac build and signing verification pass. Installation is pending because the teacher requested preservation of the running session's Undo history; the existing installed app is still active. Recovery copies are under `/private/tmp/mauth-svg-preinstall`. The running teacher session must not be restarted while its Undo history needs preserving. This deferred installation was completed by the authorised 2 November graph-padding update above, which includes the SVG hardening.
 
 ### 29 October Rational Growth Follow-Up
 
@@ -402,6 +426,8 @@ Investigation diagrams now use the same selected-module Inspector path as Test d
 
 Choose the first item relevant to the next request:
 
+Use the 2 November publication checkpoint above for the latest source, local installation and release status. The teacher has authorised normal quit/install/reopen for this update, accepting loss of in-memory Undo; preserve all document contents, revisions, dirty state and saved files across installation. Never recreate missing Apple credentials or publish an ad-hoc build as a distribution release.
+
 1. Clean-Mac verify the public `0.1.5` DMG, Finder/Quick Look behavior, tab recovery, bundled connector setup, and an in-app update from `0.1.4`.
 2. Improve the next concrete manual-solution editing or completeness gap using structured solution data and focused tests.
 3. Add conservative measured-preview layout checks or repair actions without turning intentional answer spaces into generic automatic filler.
@@ -513,16 +539,16 @@ AI drafts -> teacher edits -> structured solution data -> preview/print
 
 ## Current Verification Baseline
 
-Latest full gate on 28 October 2026:
+Latest full gate on 2 November 2026:
 
 ```text
 formatting and lint: passed
-API: 122 passed
-web/actions: 741 passed
+API: 138 passed
+web/actions: 750 passed
 document lifecycle: 17 passed
 Plotly: 11 passed
-launcher: 83 passed (desktop, connector, and CI contract)
-native Quick Look: 3 passed
+launcher: 84 passed (desktop, connector, and CI contract)
+native Quick Look: 5 passed
 TypeScript and Vite production build: passed
 ```
 

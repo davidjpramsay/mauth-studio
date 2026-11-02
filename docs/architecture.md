@@ -321,6 +321,10 @@ Rendering systems remain separate by design:
 
 `cartesianGrid.ts` supplies the shared finite grid segments for function, vector and coordinate-geometry diagrams. The renderer closes all four edges at the exact authored bounds, replaces coincident grid lines rather than doubling them, and draws a solid perimeter in the visible grid style. It never changes view bounds, curve domains or saved state; hidden grids have no perimeter. Polar and Plotly grids keep their own conventions.
 
+JSXGraph is pinned to 1.12.2 with a pnpm patch that backports the upstream print-media listener cleanup to the ESM renderer used by Mauth. The same bound callback and media-query objects are retained for removal when a board is freed. Keep the repeated-copy/print regression passing; evaluate broader upgrades against camera rotation, hidden edges and print baselines. A pending idle camera save is cancelled when a 3D pointer gesture begins, so it cannot remount the view during that gesture.
+
+Ordinary JSXGraph labels share the document's Inter font stack through escaped HTML; mathematical runs and axis numbers retain MathJax. Function/geometry and vector frames reserve at least 24 paper-size pixels independently of axis visibility, retaining larger existing reserves. These are presentation changes and do not rewrite authored coordinates or label offsets.
+
 Do not move Plotly or Penrose behavior into JSXGraph or React-only overlays. Solution graph annotations should be stored as editable diagram features, not one-off SVG markup.
 
 Browser preview uses generated A4 page boxes. Print uses the browser print dialog and physical `@page` rules whose margins are derived from the active document's stored page padding. The print content box must match the preview content box in both width and height so line wrapping cannot create print-only pages. Preview and print consume the same page segmentation rather than maintaining separate layouts.

@@ -3,8 +3,9 @@ import type { GraphConfig } from "@mauth-studio/shared";
 import JXG from "jsxgraph";
 import { cartesianGridLines } from "@/lib/cartesianGrid";
 import { clearAxisNumbersFromGrid } from "./cartesianGridLabels";
+import { graphFramePaddingForPixels } from "./graphFramePadding";
 
-import { renderMathJaxSvg } from "@/lib/mathjax";
+import { graphLabelHtml } from "./graphLabelHtml";
 import { enableHtmlTextDragging } from "@/lib/graphHtmlLabelDragging";
 import { vector2dConfigWithLabelPosition, type Vector2DElementKind } from "@/lib/diagramVector2d";
 import type { GraphLabelPositionChange } from "@/lib/previewDiagramVisibility";
@@ -221,7 +222,7 @@ function renderLatexLabelHtml(latex: string, color: string, attributes: Record<s
   if (!source) return "";
   const labelAttrs = labelDataAttributes({ "data-mauth-label-text": source, ...attributes });
   try {
-    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${renderMathJaxSvg(source, { display: false, plainSimpleInlineLatex: false })}</span>`;
+    return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${graphLabelHtml(latex, Boolean(attributes["data-mauth-axis-number"]))}</span>`;
   } catch {
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(source)}</span>`;
   }
@@ -386,13 +387,6 @@ function vectorBoardBoundingBox(
   const nextHeight = boardWidth / displayRatio;
   const padding = (nextHeight - boardHeight) / 2;
   return [left, top + padding, right, bottom - padding];
-}
-
-function boardPaddingForPixels(span: number, displaySize: number, requestedPaddingPx: number) {
-  if (!Number.isFinite(displaySize) || displaySize <= 0) return 0;
-  const paddingPx = Math.min(requestedPaddingPx, displaySize * 0.14);
-  const contentSize = displaySize - paddingPx * 2;
-  return contentSize > 0 ? (span * paddingPx) / contentSize : 0;
 }
 
 function axisLabelStep({ graphConfig, axis, majorStep }: { graphConfig?: GraphConfig | null; axis: "x" | "y"; majorStep: number }) {
@@ -731,14 +725,16 @@ export function Vector2DGraph({
     const gridMinorColor = graphConfig?.gridMinorColor || GRID_MINOR_COLOR;
     const displayWidth = graphConfig?.widthPx ?? DEFAULT_GRAPH_WIDTH;
     const displayHeight = graphConfig?.heightPx ?? DEFAULT_GRAPH_HEIGHT;
+    const minimumBoardPaddingX = Math.max(boardPaddingX, graphFramePaddingForPixels(xSpan, displayWidth));
+    const minimumBoardPaddingY = Math.max(boardPaddingY, graphFramePaddingForPixels(ySpan, displayHeight));
     const renderedBoardPaddingX =
       showAxes && (showYAxisNumbers || showAxisLabels)
-        ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
-        : boardPaddingX;
+        ? Math.max(minimumBoardPaddingX, graphFramePaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
+        : minimumBoardPaddingX;
     const renderedBoardPaddingY =
       showAxes && (showXAxisNumbers || showAxisLabels)
-        ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
-        : boardPaddingY;
+        ? Math.max(minimumBoardPaddingY, graphFramePaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
+        : minimumBoardPaddingY;
     const xLabelStep = axisLabelStep({
       graphConfig,
       axis: "x",

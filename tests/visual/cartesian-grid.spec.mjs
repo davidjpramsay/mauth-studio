@@ -143,6 +143,8 @@ async function expectClosedGrid(graph, visible = true) {
     });
   });
   expect(labelIssues).toEqual([]);
+  // Axis-number delimiters are metadata, not printed dollar glyphs.
+  await expect(graph.locator('[data-mauth-axis-number] [data-c="24"]')).toHaveCount(0);
   return geometry;
 }
 

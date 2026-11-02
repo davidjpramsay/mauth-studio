@@ -106,6 +106,8 @@ Finder opening must validate the requested document and its hidden index before 
 
 For assessment authoring, direct edits to visible document files or `.mauth` metadata are a recovery fallback, not the normal workflow. Prefer, in order: the local agent bridge when available, structured Mauth actions, the project-file API, or the visible Files drawer. Keep active editor state, project-file metadata, loaded revisions, version snapshots, and autosave aligned.
 
+Use the installed Mauth app as the primary teacher workspace for authoring and review. Apply edits through its bridge or native controls and verify the saved document there. Isolated browser fixtures remain useful for automated renderer tests and PDF proofs; explain that fallback before using it, keep it separate from teacher storage, and do not present browser-only verification as native-app verification. A stale native screenshot is an observation limitation: confirm live state and save revisions through the bridge instead of restarting the app merely to refresh the image.
+
 ## Mauthdown
 
 Mauthdown is the AI-friendly file format for tests, exams, and worksheets. Prefer explicit containers:
@@ -160,6 +162,8 @@ AI-authored document edits should prefer the structured Mauth action layer in `a
 The target authoring loop is: read the current Mauth snapshot, dry-run a structured action batch, inspect preview/validation output, apply the same batch with revision/idempotency protection, then verify in the browser. Keep `pnpm test:web-actions` passing when changing the action contract.
 
 Formatting brain rule: treat `:::space` blocks as intentional working area, not generic page filler. If a manual page break immediately follows a question, do not add a trailing question-level space block just to fill the remaining page area. Keep spaces inside parts/subparts when they are intended answer space for that part.
+
+For labelled stacked-column diagrams, allow generous horizontal room around the longest label and normally centre each label horizontally and vertically within its own segment. Choose equal column widths and preserve the percentage heights and data. Preserve deliberate source or teacher alignment choices. Measure the rendered text rather than shifting the mathematical data, and verify Student and Solutions preview and print.
 
 When students complete a supplied diagram, its drawing area is already the answer surface. Default to only one unruled line beneath it for a compact marking note; do not add a second large written-response area unless calculation or explanation is requested. Redistribute freed page capacity among the other written-response parts in proportion to their marks, using conservative whole lines and preserving teacher overrides. Verify both Student and Solutions copies. For a completed diagram that already shows the answer, use one concise marking-summary line rather than repeating its values as several prose steps. A single weighted hidden tick such as [[marks:3]] is appropriate on this compact line when it represents the diagram marks; preserve the full allocation and any genuinely required written reasoning. Keep the adjacent student Space at one unruled line when the summary fits, and render-check the pair.
 

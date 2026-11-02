@@ -26,6 +26,7 @@ import type {
 import JXG from "jsxgraph";
 import { boundedNumericRange, cartesianGridLines } from "@/lib/cartesianGrid";
 import { clearAxisNumbersFromGrid } from "./cartesianGridLabels";
+import { graphFramePaddingForPixels } from "./graphFramePadding";
 
 import { sampledFunctionCurveSegments } from "@/lib/functionCurveSampling";
 import {
@@ -41,7 +42,7 @@ import {
   geometry2dConfigWithLabelPosition,
   type Geometry2DLabelPrimitiveKind,
 } from "@/lib/diagramGeometry2d";
-import { renderMathJaxSvg } from "@/lib/mathjax";
+import { graphLabelHtml } from "./graphLabelHtml";
 import { enableHtmlTextDragging } from "@/lib/graphHtmlLabelDragging";
 import type { GraphLabelPositionChange } from "@/lib/previewDiagramVisibility";
 import { GRAPH_LABEL_FONT_CSS, GRAPH_LABEL_FONT_SIZE_PT, GRAPH_LABEL_FONT_UNIT, graphLabelSourceLatex } from "./graphTypography";
@@ -386,13 +387,6 @@ function boardEdgePadding(span: number) {
 
 function axisLabelEdgePadding(span: number) {
   return Math.max(span * AXIS_LABEL_EDGE_PADDING_RATIO, AXIS_LABEL_EDGE_PADDING_MIN_UNITS);
-}
-
-function boardPaddingForPixels(span: number, displaySize: number, requestedPaddingPx: number) {
-  if (!Number.isFinite(displaySize) || displaySize <= 0) return 0;
-  const paddingPx = Math.min(requestedPaddingPx, displaySize * 0.14);
-  const contentSize = displaySize - paddingPx * 2;
-  return contentSize > 0 ? (span * paddingPx) / contentSize : 0;
 }
 
 function graphFunctionDomain(graphFunction: GraphFunction, graphConfig: GraphConfig) {
@@ -1055,10 +1049,6 @@ function makePassiveDecoration(element: unknown) {
   });
 }
 
-function graphLabelLatex(source: string) {
-  return graphLabelSourceLatex(source);
-}
-
 function labelDataAttributes(attributes: Record<string, string | undefined>) {
   return Object.entries(attributes)
     .filter((entry): entry is [string, string] => Boolean(entry[1]))
@@ -1067,12 +1057,12 @@ function labelDataAttributes(attributes: Record<string, string | undefined>) {
 }
 
 function renderLatexLabelHtml(latex: string, color: string, attributes: Record<string, string | undefined> = {}) {
-  const normalizedLatex = graphLabelLatex(latex);
+  const normalizedLatex = latex;
   const safeColor = safeCssColor(color);
   const interactionCss = PASSIVE_GRAPH_DECORATION_CSS;
   const labelAttrs = labelDataAttributes({ "data-mauth-label-text": normalizedLatex, ...attributes });
   try {
-    const html = renderMathJaxSvg(normalizedLatex, { display: false, plainSimpleInlineLatex: false });
+    const html = graphLabelHtml(latex, Boolean(attributes["data-mauth-axis-number"]), true);
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${html}</span>`;
   } catch {
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${safeColor};${interactionCss}">${escapeHtml(normalizedLatex)}</span>`;
@@ -1080,6 +1070,21 @@ function renderLatexLabelHtml(latex: string, color: string, attributes: Record<s
 }
 
 function createLabelText(
+  board: JXG.Board,
+  x: number,
+  y: number,
+  source: string | (() => string),
+  color: string,
+  onMove?: (x: number, y: number) => void,
+  attributes: Record<string, string | undefined> = {},
+) {
+  const latex = typeof source === "function" ? () => graphLabelSourceLatex(source()) : graphLabelSourceLatex(source);
+  return createLatexLabelText(board, x, y, latex, color, onMove, attributes);
+}
+
+// Generated feature/function labels are already TeX. Do not infer prose a
+// second time: an explicit mathematical label such as $12$ must remain maths.
+function createLatexLabelText(
   board: JXG.Board,
   x: number,
   y: number,
@@ -1135,7 +1140,8 @@ function createAxisLabelText(
   // to standalone HTML text. Convert the intended screen-pixel correction to
   // board coordinates so axis numbers and letters visibly clear the stroke.
   const [positionX, positionY] = offsetUserByPixels(board, x, y, offset[0], -offset[1]);
-  const text = board.create("text", [positionX, positionY, () => renderLatexLabelHtml(latex, AXIS_COLOR, attributes)], {
+  const source = attributes["data-mauth-axis-number"] ? latex : graphLabelSourceLatex(latex);
+  const text = board.create("text", [positionX, positionY, () => renderLatexLabelHtml(source, AXIS_COLOR, attributes)], {
     fixed: !onMove,
     highlight: false,
     strokeColor: AXIS_COLOR,
@@ -1185,7 +1191,7 @@ function createFeaturePoint(
     strokeWidth: lineWeight(feature.strokeWidth, 2),
     layer: GRAPH_LAYERS.point,
   });
-  const labelText = createLabelText(
+  const labelText = createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : x,
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : y,
@@ -1240,7 +1246,7 @@ function createFeaturePoint(
 function createFreeLabel(board: JXG.Board, feature: GraphFeature, color: string, onMove?: (x: number, y: number) => void) {
   const x = Number.isFinite(feature.x) ? (feature.x as number) : 0;
   const y = Number.isFinite(feature.y) ? (feature.y as number) : 0;
-  createLabelText(board, x, y, () => featureLabelLatex({ ...feature, labelMode: "name" }), color, onMove);
+  createLatexLabelText(board, x, y, () => featureLabelLatex({ ...feature, labelMode: "name" }), color, onMove);
 }
 
 function createLineSegmentFeature(
@@ -1266,7 +1272,7 @@ function createLineSegmentFeature(
 
   const label = featureLabelLatex(feature);
   if (label.trim()) {
-    createLabelText(
+    createLatexLabelText(
       board,
       Number.isFinite(feature.labelX) ? (feature.labelX as number) : (startCoords[0] + endCoords[0]) / 2,
       Number.isFinite(feature.labelY) ? (feature.labelY as number) : (startCoords[1] + endCoords[1]) / 2,
@@ -1679,7 +1685,7 @@ function createAngleMarkerFeature(
   const startAngle = Math.atan2(first[1] - vertex[1], first[0] - vertex[0]);
   const middleAngle = startAngle + shortestAngleDelta(startAngle, Math.atan2(second[1] - vertex[1], second[0] - vertex[0])) / 2;
   const labelRadius = markerSize * 1.65;
-  createLabelText(
+  createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : vertex[0] + Math.cos(middleAngle) * labelRadius,
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : vertex[1] + Math.sin(middleAngle) * labelRadius,
@@ -2051,7 +2057,7 @@ function drawRegionGeometry(
   onLabelMove?: (x: number, y: number) => void,
 ) {
   drawRegionPolygon(board, geometry.polygon, feature, color);
-  createLabelText(
+  createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : geometry.labelPoint[0],
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : geometry.labelPoint[1],
@@ -2088,7 +2094,7 @@ function drawRegionGeometriesLabel(
     return geometryArea > largestArea ? geometry : largest;
   }, geometries[0]);
 
-  createLabelText(
+  createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : labelGeometry.labelPoint[0],
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : labelGeometry.labelPoint[1],
@@ -2105,7 +2111,7 @@ function drawRegionGeometryLabel(
   color: string,
   onLabelMove?: (x: number, y: number) => void,
 ) {
-  createLabelText(
+  createLatexLabelText(
     board,
     Number.isFinite(feature.labelX) ? (feature.labelX as number) : geometry.labelPoint[0],
     Number.isFinite(feature.labelY) ? (feature.labelY as number) : geometry.labelPoint[1],
@@ -3202,18 +3208,20 @@ export function FunctionGraph({
     const gridMinorColor = graphConfig.gridMinorColor || GRID_MINOR_COLOR;
     const displayWidth = graphConfig.widthPx ?? DEFAULT_GRAPH_WIDTH;
     const displayHeight = graphDisplayHeight(graphConfig);
+    const minimumBoardPaddingX = Math.max(boardPaddingX, graphFramePaddingForPixels(xSpan, displayWidth));
+    const minimumBoardPaddingY = Math.max(boardPaddingY, graphFramePaddingForPixels(ySpan, displayHeight));
     const renderedBoardPaddingX =
       showAxes && (showYAxisNumbers || showAxisLabels)
-        ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
+        ? Math.max(minimumBoardPaddingX, graphFramePaddingForPixels(xSpan, displayWidth, AXIS_CONTENT_EDGE_PADDING_PX))
         : graphConfig.type === "geometry2d"
-          ? Math.max(boardPaddingX, boardPaddingForPixels(xSpan, displayWidth, 32))
-          : boardPaddingX;
+          ? Math.max(minimumBoardPaddingX, graphFramePaddingForPixels(xSpan, displayWidth, 32))
+          : minimumBoardPaddingX;
     const renderedBoardPaddingY =
       showAxes && (showXAxisNumbers || showAxisLabels)
-        ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
+        ? Math.max(minimumBoardPaddingY, graphFramePaddingForPixels(ySpan, displayHeight, AXIS_CONTENT_EDGE_PADDING_PX))
         : graphConfig.type === "geometry2d"
-          ? Math.max(boardPaddingY, boardPaddingForPixels(ySpan, displayHeight, 32))
-          : boardPaddingY;
+          ? Math.max(minimumBoardPaddingY, graphFramePaddingForPixels(ySpan, displayHeight, 32))
+          : minimumBoardPaddingY;
     const xLabelStep = axisLabelStep({
       graphConfig,
       axis: "x",
@@ -3565,7 +3573,7 @@ export function FunctionGraph({
       if (!shouldShowGraphItem(graphFunction) || !graphFunction.showLabel) return;
       const labelX = graphFunction.labelX ?? xMin;
       const labelY = graphFunction.labelY ?? yMax;
-      createLabelText(
+      createLatexLabelText(
         board,
         labelX,
         labelY,

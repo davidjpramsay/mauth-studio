@@ -25,9 +25,9 @@ import {
 import { DEFAULT_3D_VIEW_STATE } from "@/lib/diagram3d";
 import { graph3dEdgeIsHidden, graph3dEdgeKey } from "@/lib/graph3dHiddenEdges";
 import { graph3dConfigWithLabelScreenOffset, type Graph3DLabelElementKind } from "@/lib/diagramGraph3d";
-import { renderMathJaxSvg } from "@/lib/mathjax";
+import { graphLabelHtml } from "./graphLabelHtml";
 import { showDiagramLabelFeedback } from "@/lib/diagramLabelFeedback";
-import { GRAPH_LABEL_FONT_CSS, graphLabelAttributes } from "./graphTypography";
+import { GRAPH_LABEL_FONT_CSS, graphLabelAttributes, graphLabelSourceLatex } from "./graphTypography";
 
 const DEFAULT_GRAPH_WIDTH = 680;
 const DEFAULT_GRAPH_HEIGHT = 300;
@@ -578,24 +578,6 @@ function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function stripLatexDelimiters(value: string) {
-  const trimmed = value.trim();
-  if (trimmed.startsWith("$$") && trimmed.endsWith("$$")) return trimmed.slice(2, -2).trim();
-  if (trimmed.startsWith("$") && trimmed.endsWith("$")) return trimmed.slice(1, -1).trim();
-  return trimmed;
-}
-
-function escapeLatexText(value: string) {
-  return value.replace(/\\/g, "\\textbackslash{}").replace(/([{}_%&#])/g, "\\$1");
-}
-
-function labelLatexSource(value: string) {
-  const stripped = stripLatexDelimiters(value);
-  if (!stripped) return "";
-  if (/[\\^_{}=()[\]+-]/.test(stripped) || /^[A-Za-z][A-Za-z0-9]*$/.test(stripped)) return stripped;
-  return `\\text{${escapeLatexText(stripped)}}`;
-}
-
 function labelDataAttributes(attributes: Record<string, string | undefined> = {}) {
   return Object.entries(attributes)
     .filter((entry): entry is [string, string] => Boolean(entry[1]))
@@ -605,10 +587,10 @@ function labelDataAttributes(attributes: Record<string, string | undefined> = {}
 
 function render3DLatexLabel(label: string, attributes: Record<string, string | undefined> = {}, color = "#0f172a") {
   const interactionCss = "pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;";
-  const latex = labelLatexSource(label);
+  const latex = graphLabelSourceLatex(label);
   const labelAttrs = labelDataAttributes({ "data-mauth-label-text": latex, ...attributes });
   try {
-    const html = renderMathJaxSvg(latex, false);
+    const html = graphLabelHtml(label);
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${escapeHtml(color)};${interactionCss}">${html}</span>`;
   } catch {
     return `<span class="jxg-latex-label" ${labelAttrs} style="${GRAPH_LABEL_FONT_CSS} color:${escapeHtml(color)};${interactionCss}">${escapeHtml(label)}</span>`;
@@ -2178,6 +2160,8 @@ export function Basic3DGraph({
     );
     container?.setAttribute("data-mauth-graph3d-range-span-ratio", (maximumRangeSpan / Math.max(1e-9, minimumRangeSpan)).toFixed(6));
     const handlePointerDown = () => {
+      // A queued idle save must not remount the view during a camera drag.
+      window.clearTimeout(commitTimer);
       pointerActive = true;
       window.addEventListener("pointerup", commitViewStateSoon, { once: true });
       window.addEventListener("pointercancel", commitViewStateSoon, { once: true });
