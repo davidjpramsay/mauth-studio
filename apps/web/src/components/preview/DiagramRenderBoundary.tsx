@@ -8,7 +8,7 @@ export function DiagramRenderPlaceholder({ config, state }: { config: GraphConfi
   return (
     <div
       className="flex w-full items-center justify-center overflow-hidden bg-white"
-      style={{ height: graphHeight(config), maxWidth: graphWidth(config) }}
+      style={{ height: graphHeight(config), width: graphWidth(config), maxWidth: "100%" }}
       data-mauth-print-render-state={state}
       role={state === "error" ? "alert" : undefined}
       aria-label={state === "loading" ? "Loading diagram" : undefined}

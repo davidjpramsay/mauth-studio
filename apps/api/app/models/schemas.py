@@ -107,6 +107,8 @@ class GraphFeature(BaseModel):
 
 class GraphConfig(BaseModel):
     type: str
+    title: str | None = None
+    caption: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
     style: str | None = None
     options: dict[str, Any] = Field(default_factory=dict)

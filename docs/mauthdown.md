@@ -1111,3 +1111,7 @@ This uses a stable diagram response slot: the diagram is floated once, blank ans
 ## Import Behaviour
 
 The importer first looks for authored Mauthdown containers such as `:::question`. If found, those containers are the source of truth. Older exports with a hidden `mauthdown-json` block are still accepted as a fallback for compatibility.
+
+### Attached Figure Text
+
+The diagram JSON payload may include optional top-level `title` and `caption` strings. They attach a centred title above and a caption or identifier below the native drawing. Use normal prose and `$...$` for mathematics, for example `"title": "Plot A: used cars"` and `"caption": "Figure $A$"`. Blank values reserve no space. Keep these fields outside renderer-specific `data`; existing statistical `data.title` remains read-compatible. Prefer attached figure text over separate text modules used only to label a diagram.

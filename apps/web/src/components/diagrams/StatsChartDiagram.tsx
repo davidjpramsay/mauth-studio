@@ -56,7 +56,11 @@ function expandPlotClipRects(element: HTMLElement & { data?: Array<{ type?: stri
 
 export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const spec = useMemo(() => normalizeStatsChartSpec(graphConfig), [graphConfig]);
+  const chartConfig = useMemo(
+    () => (typeof graphConfig?.title === "string" ? { ...graphConfig, data: { ...graphConfig.data, title: "" } } : graphConfig),
+    [graphConfig],
+  );
+  const spec = useMemo(() => normalizeStatsChartSpec(chartConfig), [chartConfig]);
   const title = spec.data.title ?? "";
   const xLabel = spec.data.xLabel ?? "";
   const yLabel = spec.data.yLabel ?? "";
@@ -71,7 +75,7 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
     [title, xLabel, yLabel],
   );
   const plotlyConfig = useMemo(() => {
-    const config = buildStatsChartPlotlyConfig(graphConfig);
+    const config = buildStatsChartPlotlyConfig(chartConfig);
     if (!labelMath.title && !labelMath.x && !labelMath.y && !horizontalYLabel) return config;
 
     return {
@@ -83,7 +87,7 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
         yaxis: labelMath.y || horizontalYLabel ? withoutAxisTitle(config.layout.yaxis) : config.layout.yaxis,
       },
     };
-  }, [graphConfig, horizontalYLabel, labelMath]);
+  }, [chartConfig, horizontalYLabel, labelMath]);
   const plotlyConfigKey = useMemo(() => JSON.stringify(plotlyConfig), [plotlyConfig]);
   const [error, setError] = useState("");
   const [printRenderState, setPrintRenderState] = useState<PrintRenderState>("loading");

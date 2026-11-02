@@ -19,6 +19,50 @@ function textBlock(id: string, text: string): ContentBlock {
   return { id, kind: "text", text };
 }
 
+test("diagram title and caption edits preserve nested geometry and hidden answers", () => {
+  const graphConfig: GraphConfig = {
+    type: "statsChart",
+    data: {
+      chartType: "blankAxes",
+      title: "Legacy title",
+      range: [0, 5],
+      yRange: [0, 10],
+      series: [{ id: "answer", seriesType: "points", xValues: [2], yValues: [4], solutionOnly: true }],
+    },
+    options: { widthPx: 300, heightPx: 240 },
+  };
+  const initial = [question("q1", [{ id: "columns", kind: "columns", columns: [[diagramBlock("plot", graphConfig)], []] }])];
+  const result = applyMauthActions(initial, [
+    {
+      type: "module.settings.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "plot",
+      settings: { kind: "diagram", title: "Plot A", caption: "Figure $\\alpha$" },
+    },
+  ]);
+  assert.equal(result.ok, true);
+  const block = findContentBlock(result.questions[0].contentBlocks, "plot");
+  assert.ok(block?.kind === "diagram");
+  assert.equal(block.graphConfig.title, "Plot A");
+  assert.equal(block.graphConfig.caption, "Figure $\\alpha$");
+  assert.deepEqual(block.graphConfig.data, { ...graphConfig.data, title: "" });
+  assert.deepEqual(block.graphConfig.options, graphConfig.options);
+  assert.equal((graphConfig.data as { title: string }).title, "Legacy title");
+  const cleared = applyMauthActions(result.questions, [
+    {
+      type: "module.settings.update",
+      scope: { kind: "question", questionId: "q1" },
+      blockId: "plot",
+      settings: { kind: "diagram", title: "", caption: "" },
+    },
+  ]);
+  assert.equal(cleared.ok, true);
+  const clearedBlock = findContentBlock(cleared.questions[0].contentBlocks, "plot");
+  assert.ok(clearedBlock?.kind === "diagram");
+  assert.equal(clearedBlock.graphConfig.title, "");
+  assert.equal(clearedBlock.graphConfig.caption, "");
+});
+
 function spaceBlock(id: string, lines: number): ContentBlock {
   return { id, kind: "space", lines };
 }

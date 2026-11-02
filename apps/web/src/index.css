@@ -2646,6 +2646,36 @@
     width: 100%;
   }
 
+  .test-diagram-figure {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: fit-content;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    break-inside: avoid;
+  }
+
+  .test-diagram-title,
+  .test-diagram-caption {
+    contain: inline-size;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .test-diagram-title {
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+
+  .test-diagram-caption {
+    margin-top: 6px;
+  }
+
   .test-diagram-wrap {
     max-width: 100%;
     width: fit-content;

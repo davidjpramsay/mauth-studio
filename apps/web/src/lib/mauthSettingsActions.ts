@@ -20,6 +20,7 @@ import type {
   ImageDiagramAnnotation,
   TableCellAlignment,
 } from "@mauth-studio/shared";
+import { diagramFigureTextPatch } from "./diagramFigureText.ts";
 import {
   DEFAULT_STATS_CHART_SPEC,
   normalizeStatsChartSpec,
@@ -186,7 +187,7 @@ export type MauthModuleSettingsUpdate =
       layout?: ChoiceListLayout;
       solutionAnswerIndex?: number | null;
     }
-  | { kind: "diagram"; diagramAlign?: DiagramAlignment; diagramTextSide?: DiagramTextSide };
+  | { kind: "diagram"; diagramAlign?: DiagramAlignment; diagramTextSide?: DiagramTextSide; title?: string; caption?: string };
 
 export type MauthDiagramSettingsUpdate =
   | (Graph2DSettingsUpdate & { renderer: "graph2d" })
@@ -1459,6 +1460,17 @@ export function applyModuleSettingsUpdate(block: ContentBlock, settings: MauthMo
       ...block,
       ...(settings.diagramAlign !== undefined ? { diagramAlign: normalizeDiagramAlignment(settings.diagramAlign) } : {}),
       ...(settings.diagramTextSide !== undefined ? { diagramTextSide: settings.diagramTextSide } : {}),
+      ...(settings.title !== undefined || settings.caption !== undefined
+        ? {
+            graphConfig: {
+              ...block.graphConfig,
+              ...diagramFigureTextPatch(block.graphConfig, {
+                ...(settings.title !== undefined ? { title: settings.title } : {}),
+                ...(settings.caption !== undefined ? { caption: settings.caption } : {}),
+              }),
+            },
+          }
+        : {}),
     },
   };
 }

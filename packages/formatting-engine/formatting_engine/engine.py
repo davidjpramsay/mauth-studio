@@ -83,7 +83,15 @@ class FormattingEngine:
     @classmethod
     def _content_block_html(cls, block: dict) -> str:
         if block.get("kind") == "diagram":
-            return cls._diagram_html(block.get("graphConfig"), block.get("diagramAlign"))
+            config = block.get("graphConfig") or {}
+            drawing = cls._diagram_html(config, block.get("diagramAlign"))
+            title = str(config.get("title") or "").strip()
+            caption = str(config.get("caption") or "").strip()
+            if not title and not caption:
+                return drawing
+            title_html = f'<div class="diagram-title">{cls._mixed_math_html(title)}</div>' if title else ""
+            caption_html = f"<figcaption>{cls._mixed_math_html(caption)}</figcaption>" if caption else ""
+            return f'<figure class="diagram-figure" style="text-align:center;break-inside:avoid">{title_html}{drawing}{caption_html}</figure>'
         if block.get("kind") == "choices":
             return cls._choices_html(block)
         if block.get("kind") == "table":

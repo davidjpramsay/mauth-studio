@@ -249,15 +249,7 @@ export function StatsChartEditor({ config, showSolutions = false, settingsMode =
         </section>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <label className="flex flex-col gap-2 text-xs font-medium">
-          Title
-          <input
-            value={data.title ?? ""}
-            onChange={(event) => updateData({ title: event.target.value })}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal"
-          />
-        </label>
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <label className="flex flex-col gap-2 text-xs font-medium">
           x-axis label
           <input
