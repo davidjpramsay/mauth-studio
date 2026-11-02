@@ -77,6 +77,8 @@ for (const width of [1440, 900]) {
     await page.getByRole("button", { name: /^Question 1\. Click/ }).dblclick();
     const content = page.getByRole("tab", { name: "Content", exact: true });
     if (await content.isVisible()) await content.click();
+    await expect(page.getByText("Data values", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Plotted series", { exact: true })).toHaveCount(2);
     const title = page.getByRole("textbox", { name: "Column 1 diagram 1 title above", exact: true });
     const caption = page.getByRole("textbox", { name: "Column 1 diagram 1 caption below", exact: true });
     await title.fill("Plot A: revised $x$");
