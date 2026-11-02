@@ -108,6 +108,37 @@ test("keeps vertical y-axis labels as the default", () => {
   assert.equal(spec.data.yLabelOrientation, "vertical");
 });
 
+test("axis label directions work for every statistics chart without changing observations", () => {
+  for (const chartType of ["histogram", "binomial", "normal", "box", "density", "blankAxes"]) {
+    const input = {
+      type: "statsChart",
+      data: {
+        chartType,
+        xLabel: "Age (years)",
+        yLabel: "Value",
+        xLabelOrientation: "vertical",
+        yLabelOrientation: "horizontal",
+        series: [{ id: "observations", seriesType: "points", xValues: [1, 3], yValues: [4, 2] }],
+      },
+    };
+    const original = structuredClone(input);
+    const spec = normalizeStatsChartSpec(input);
+    assert.equal(spec.data.xLabelOrientation, "vertical");
+    assert.equal(spec.data.yLabelOrientation, "horizontal");
+    assert.deepEqual(spec.data.series?.[0]?.xValues, original.data.series[0].xValues);
+    assert.deepEqual(spec.data.series?.[0]?.yValues, original.data.series[0].yValues);
+    const config = buildStatsChartPlotlyConfig(input, { xLabelWidth: 90 });
+    assert.equal((config.layout.xaxis as { title: { text: string } }).title.text, "");
+    assert.equal((config.layout.yaxis as { title: { text: string } }).title.text, "");
+    assert.equal((config.layout.margin as { b: number }).b, 134);
+    assert.deepEqual(input, original);
+    const legacy = normalizeStatsChartSpec({ type: "statsChart", data: { chartType } });
+    assert.equal(legacy.data.xLabelOrientation, undefined);
+    assert.equal(Object.hasOwn(legacy.data, "xLabelOrientation"), false);
+    assert.equal(legacy.data.yLabelOrientation, "vertical");
+  }
+});
+
 test("plots source probability density curves from explicit points", () => {
   const config = buildStatsChartPlotlyConfig({
     type: "statsChart",

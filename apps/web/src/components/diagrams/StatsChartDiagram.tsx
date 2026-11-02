@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { GraphConfig } from "@mauth-studio/shared";
 import { buildStatsChartPlotlyConfig, normalizeStatsChartSpec } from "@mauth-studio/diagram-plotly";
 
@@ -64,8 +64,19 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
   const title = spec.data.title ?? "";
   const xLabel = spec.data.xLabel ?? "";
   const yLabel = spec.data.yLabel ?? "";
-  const horizontalYLabel =
-    spec.data.chartType === "histogram" && spec.data.yLabelOrientation === "horizontal" && Boolean(spec.data.yLabel?.trim());
+  const verticalXLabel = spec.data.xLabelOrientation === "vertical" && Boolean(xLabel.trim());
+  const xLabelRef = useRef<HTMLSpanElement>(null);
+  const [xLabelWidth, setXLabelWidth] = useState(60);
+  useLayoutEffect(() => {
+    const label = xLabelRef.current;
+    if (!verticalXLabel || !label) return;
+    const measure = () => setXLabelWidth(label.offsetWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(label);
+    return () => observer.disconnect();
+  }, [verticalXLabel, xLabel]);
+  const horizontalYLabel = spec.data.chartType !== "box" && spec.data.yLabelOrientation === "horizontal" && Boolean(yLabel.trim());
   const labelMath = useMemo(
     () => ({
       title: mathTextHasMath(title),
@@ -75,19 +86,19 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
     [title, xLabel, yLabel],
   );
   const plotlyConfig = useMemo(() => {
-    const config = buildStatsChartPlotlyConfig(chartConfig);
-    if (!labelMath.title && !labelMath.x && !labelMath.y && !horizontalYLabel) return config;
+    const config = buildStatsChartPlotlyConfig(chartConfig, { xLabelWidth });
+    if (!labelMath.title && !labelMath.x && !labelMath.y && !horizontalYLabel && !verticalXLabel) return config;
 
     return {
       ...config,
       layout: {
         ...config.layout,
         title: labelMath.title ? undefined : config.layout.title,
-        xaxis: labelMath.x ? withoutAxisTitle(config.layout.xaxis) : config.layout.xaxis,
+        xaxis: labelMath.x || verticalXLabel ? withoutAxisTitle(config.layout.xaxis) : config.layout.xaxis,
         yaxis: labelMath.y || horizontalYLabel ? withoutAxisTitle(config.layout.yaxis) : config.layout.yaxis,
       },
     };
-  }, [chartConfig, horizontalYLabel, labelMath]);
+  }, [chartConfig, horizontalYLabel, labelMath, verticalXLabel, xLabelWidth]);
   const plotlyConfigKey = useMemo(() => JSON.stringify(plotlyConfig), [plotlyConfig]);
   const [error, setError] = useState("");
   const [printRenderState, setPrintRenderState] = useState<PrintRenderState>("loading");
@@ -184,25 +195,46 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
           <MathText source={title} />
         </div>
       ) : null}
-      {labelMath.x && xLabel ? (
+      {(labelMath.x || verticalXLabel) && xLabel ? (
         <div
-          className="pointer-events-none absolute bottom-2 left-14 right-6 flex justify-center text-center text-black"
+          className="pointer-events-none absolute bottom-2 flex justify-center text-center text-black"
           data-mauth-label-text={xLabel}
+          data-mauth-axis-label="x"
+          data-mauth-label-orientation={verticalXLabel ? "vertical" : "horizontal"}
+          style={{
+            left: verticalXLabel ? (plotlyConfig.layout.margin as { l: number }).l : 56,
+            right: verticalXLabel ? (plotlyConfig.layout.margin as { r: number }).r : 24,
+            ...(verticalXLabel ? { height: xLabelWidth } : {}),
+          }}
         >
-          <MathText source={xLabel} />
+          <span
+            ref={xLabelRef}
+            className="inline-block whitespace-nowrap"
+            style={
+              verticalXLabel
+                ? { position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%) rotate(-90deg)" }
+                : undefined
+            }
+          >
+            <MathText source={xLabel} />
+          </span>
         </div>
       ) : null}
       {horizontalYLabel ? (
         <div
           className={`pointer-events-none absolute left-12 right-6 flex justify-start text-left text-black ${title ? "top-7" : "top-1"}`}
           data-mauth-label-text={yLabel}
+          data-mauth-axis-label="y"
+          data-mauth-label-orientation="horizontal"
         >
           <MathText source={yLabel} />
         </div>
-      ) : labelMath.y && yLabel ? (
+      ) : spec.data.chartType !== "box" && labelMath.y && yLabel ? (
         <div
           className="pointer-events-none absolute bottom-12 left-1 top-12 flex w-10 items-center justify-center text-center text-black"
           data-mauth-label-text={yLabel}
+          data-mauth-axis-label="y"
+          data-mauth-label-orientation="vertical"
         >
           <div className="-rotate-90 whitespace-nowrap">
             <MathText source={yLabel} />

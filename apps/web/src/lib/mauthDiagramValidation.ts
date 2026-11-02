@@ -1594,6 +1594,7 @@ function validateStatsChart(config: Record<string, unknown>, path: string, issue
   optionalEnum(data, "barType", `${path}.data`, HISTOGRAM_BAR_TYPES, issues);
   optionalEnum(data, "dataMode", `${path}.data`, STATS_CHART_DATA_MODES, issues);
   optionalEnum(data, "yAxisMode", `${path}.data`, STATS_CHART_Y_AXIS_MODES, issues);
+  optionalEnum(data, "xLabelOrientation", `${path}.data`, STATS_CHART_Y_LABEL_ORIENTATIONS, issues);
   optionalEnum(data, "yLabelOrientation", `${path}.data`, STATS_CHART_Y_LABEL_ORIENTATIONS, issues);
   optionalString(data, "xLabel", `${path}.data`, issues);
   optionalString(data, "yLabel", `${path}.data`, issues);

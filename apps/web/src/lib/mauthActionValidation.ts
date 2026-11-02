@@ -1039,6 +1039,8 @@ function validateDiagramSettingsUpdate(value: unknown, path: string, issues: Mau
   }
 
   if (value.renderer === "statsChart") {
+    enumField(value, "xLabelOrientation", path, new Set(["horizontal", "vertical"]), issues, true);
+    enumField(value, "yLabelOrientation", path, new Set(["horizontal", "vertical"]), issues, true);
     numberFields(value, ["widthPx", "heightPx", "fillOpacity"], path, issues);
     stringValueField(value, "chartType", path, issues, true);
     stringValueField(value, "fillColor", path, issues, true);

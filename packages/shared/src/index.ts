@@ -25,7 +25,8 @@ export type StatsChartType = "histogram" | "binomial" | "normal" | "box" | "dens
 export type HistogramBarType = "continuous" | "discrete";
 export type StatsChartDataMode = "raw" | "manualProbabilities" | "manualFrequencies";
 export type StatsChartYAxisMode = "frequency" | "relativeFrequency";
-export type StatsChartYLabelOrientation = "vertical" | "horizontal";
+export type AxisLabelOrientation = "vertical" | "horizontal";
+export type StatsChartYLabelOrientation = AxisLabelOrientation;
 export type StatsChartSeriesType = "line" | "points" | "linePoints" | "bars";
 export type StatsChartRegionMode = "between" | "leftTail" | "rightTail" | "outside";
 
@@ -62,6 +63,7 @@ export interface StatsChartData {
   barType?: HistogramBarType;
   dataMode?: StatsChartDataMode;
   yAxisMode?: StatsChartYAxisMode;
+  xLabelOrientation?: AxisLabelOrientation;
   yLabelOrientation?: StatsChartYLabelOrientation;
   values?: number[];
   xValues?: number[];

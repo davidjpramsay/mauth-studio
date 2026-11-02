@@ -71,6 +71,40 @@ function diagramBlock(id: string, graphConfig: GraphConfig): ContentBlock {
   return { id, kind: "diagram", graphConfig };
 }
 
+test("axis orientation settings preserve nested scatterplot data and hidden solutions", () => {
+  const graphConfig: GraphConfig = {
+    type: "statsChart",
+    title: "Plot A",
+    caption: "Figure 1",
+    data: {
+      chartType: "blankAxes",
+      range: [0, 8],
+      yRange: [0, 25],
+      xLabel: "Age (years)",
+      yLabel: "Value ($1000)",
+      series: [
+        { id: "given", seriesType: "points", xValues: [1, 2], yValues: [22, 19] },
+        { id: "answer", seriesType: "line", xValues: [0, 8], yValues: [25, 1], solutionOnly: true },
+      ],
+    },
+    options: { widthPx: 300, heightPx: 240 },
+  };
+  const initial = [question("q1", [{ id: "columns", kind: "columns", columns: [[diagramBlock("plot", graphConfig)], []] }])];
+  const result = applyMauthAction(initial, {
+    type: "diagram.settings.update",
+    scope: { kind: "question", questionId: "q1" },
+    blockId: "plot",
+    settings: { renderer: "statsChart", xLabelOrientation: "vertical", yLabelOrientation: "horizontal" },
+  });
+  assert.equal(result.ok, true, result.error);
+  const block = findContentBlock(result.questions[0].contentBlocks, "plot");
+  assert.ok(block?.kind === "diagram");
+  assert.deepEqual(block.graphConfig, {
+    ...graphConfig,
+    data: { ...graphConfig.data, xLabelOrientation: "vertical", yLabelOrientation: "horizontal" },
+  });
+});
+
 function tableBlock(id: string): ContentBlock {
   return {
     id,
