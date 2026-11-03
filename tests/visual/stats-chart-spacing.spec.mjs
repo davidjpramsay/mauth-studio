@@ -45,7 +45,13 @@ for (const width of [1440, 900]) {
         expect(ticks.length).toBeGreaterThan(0);
         expect(label.x).toBeGreaterThanOrEqual(frame.x);
         expect(label.y).toBeGreaterThanOrEqual(frame.y);
-        expect(label.y + label.height).toBeLessThan(Math.min(...ticks.map((tick) => tick.y)));
+        expect(label.x + label.width).toBeLessThan(Math.min(...ticks.map((tick) => tick.x)));
+        const centre = await chart.locator(".js-plotly-plot").evaluate((plot) => {
+          const rect = plot.getBoundingClientRect();
+          const layout = plot._fullLayout;
+          return rect.y + (layout._size.t + layout._size.h / 2) * (rect.height / layout.height);
+        });
+        expect(Math.abs(label.y + label.height / 2 - centre)).toBeLessThan(1);
       }
     }
     await checkCharts(page.locator(".preview-pane"));

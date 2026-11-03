@@ -28,11 +28,14 @@ test("normalizes manual probability column graphs with horizontal y-axis labels"
   assert.deepEqual(trace.x, [2, 4, 5]);
   assert.deepEqual(trace.y, [0.1, 0.25, 0.3]);
   assert.equal(layout.yaxis.title.text, "");
-  assert.equal(layout.margin.l, 60);
-  assert.equal(layout.margin.t, 34);
+  assert.equal(layout.margin.t, 20);
+  assert.ok(layout.margin.l >= 78);
 
   const titled = buildStatsChartPlotlyConfig({ ...spec, data: { ...spec.data, title: "Probability distribution" } });
-  assert.equal((titled.layout.margin as { t: number }).t, 58);
+  assert.equal((titled.layout.margin as { t: number }).t, 42);
+  const measured = buildStatsChartPlotlyConfig(spec, { yLabelWidth: 90 });
+  assert.ok((measured.layout.margin as { l: number }).l > 90);
+  assert.equal((measured.layout.margin as { t: number }).t, layout.margin.t);
 });
 
 test("plots discrete raw data as relative-frequency columns", () => {
