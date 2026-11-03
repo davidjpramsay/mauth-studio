@@ -8,7 +8,7 @@ For repository development, read `AGENTS.md`, `docs/current-state.md`, and the r
 
 These files define the contract for document edits, diagram rules, validation, file operations, and generated-artifact hygiene.
 
-For assessment authoring, use the installed Mauth app as the primary teacher workspace. Apply edits through its bridge or native controls and confirm saved revisions there. Explain an isolated browser fallback before using it for automated rendering checks or PDF proofs, keep those fixtures separate from teacher storage, and identify which evidence came from the browser. A stale native screenshot does not justify restarting the teacher's app just to refresh an image.
+For assessment authoring, use the installed Mauth app as the primary teacher workspace. Export PDFs with `mauth_pdf_export` and retrieve them with `mauth_pdf_read` or the returned MCP resource URI; the authoring harness should use only MCP for Mauth, with no browser/OS print automation. Apply edits through its bridge or native controls and confirm saved revisions there. Explain an isolated browser fallback before using it for automated rendering checks or PDF proofs, keep those fixtures separate from teacher storage, and identify which evidence came from the browser. A stale native screenshot does not justify restarting the teacher's app just to refresh an image.
 
 ## Work Streams
 

@@ -34,6 +34,8 @@ POST /api/agent/current/documents/open
 POST /api/agent/current/documents/close
 POST /api/agent/current/actions/preview
 POST /api/agent/current/actions/apply
+POST /api/agent/current/pdf/export
+POST /api/agent/current/pdf/read
 POST /api/agent/current/validation/run
 POST /api/agent/current/presence
 GET  /api/agent/current/events?after=0
@@ -48,7 +50,7 @@ GET  /.well-known/mauth-agent.json
 GET  /agent-docs
 ```
 
-`actions.apply`, `documents/create`, and `documents/close` require an `Idempotency-Key`. `actions.apply` also requires:
+`actions.apply`, `documents/create`, `documents/close`, and `pdf/export` require an `Idempotency-Key`. `actions.apply` also requires:
 
 - `baseSnapshotId`
 - `Idempotency-Key`
@@ -72,6 +74,8 @@ Tools:
 - `mauth_document_create`
 - `mauth_document_open`
 - `mauth_document_close`
+- `mauth_pdf_export`
+- `mauth_pdf_read`
 - `mauth_snapshot`
 - `mauth_actions_preview`
 - `mauth_actions_apply`
@@ -103,3 +107,9 @@ verify in browser
 If the snapshot is stale, read a fresh snapshot and rebuild the batch. Do not retry a changed apply payload with the same idempotency key.
 
 Comments and suggestions are review state only. Creating a suggestion does not mutate the document; use `mauth_actions_preview` and `mauth_actions_apply` for actual edits.
+
+## PDFs Through MCP Only
+
+Call `mauth_pdf_export` with `copy: "student"` or `"solutions"` and optional open `documentId`, `baseSnapshotId` and stable retry `idempotencyKey`. Use `"teacher"` for an investigation rubric. The app captures the live tab, waits for print readiness and exports the same canonical print layout without a dialog. It preserves selected tab, copy mode, history, unsaved work and saved revisions. Browser-only runtimes return `DESKTOP_REQUIRED`.
+
+The result contains a private immutable local PDF and its id, resource URI, byte SHA-256, prepared page count and source snapshot/revision/dirty state. Use `mauth_pdf_read({id})` to get an embedded PDF resource, or MCP resources/read with the returned URI. No browser, native print automation, direct file access or shell export is needed. Exports remain in the app-data exports folder until removed locally; maximum 32 MiB. Rendering does not certify question content. Inspect both copies after changes. See `docs/agent-bridge.md` for errors and provenance. Reconnect an existing MCP connector once after upgrading to discover newly added tools.

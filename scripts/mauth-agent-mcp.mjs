@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { randomUUID } from "node:crypto";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod/v4";
 
@@ -149,6 +149,79 @@ server.registerTool(
       success: true,
       ...diagramToolGuide(intent, renderer, coordinateFidelity, requirements, advancedSubstance),
     }),
+);
+
+function pdfResourceUri(id) {
+  return `mauth://exports/${id}/pdf`;
+}
+async function readPdfArtifact(id) {
+  return bridgeRequest("/api/agent/current/pdf/read", { method: "POST", body: { id } });
+}
+server.registerResource(
+  "mauth-pdf-export",
+  new ResourceTemplate("mauth://exports/{id}/pdf", { list: undefined }),
+  { mimeType: "application/pdf", description: "A PDF exported by the desktop app. Obtain the id with mauth_pdf_export." },
+  async (uri, { id }) => {
+    const result = await readPdfArtifact(id);
+    if (!result.success) throw new Error(result.error || "PDF export unavailable.");
+    return { contents: [{ uri: uri.href, mimeType: "application/pdf", blob: result.artifact.blob }] };
+  },
+);
+server.registerTool(
+  "mauth_pdf_export",
+  {
+    title: "Export Mauth PDF",
+    description:
+      "Export an open document through the desktop app's canonical print layout without a dialog or browser automation. Does not switch tabs, change copy mode, edit or save the document. Returns an immutable local PDF, page count, SHA-256, source snapshot/revision/dirty state and a PDF resource URI. Use mauth_pdf_read (or resources/read) to retrieve the PDF through MCP. Use both student and solutions copies to check an assessment.",
+    inputSchema: z.object({
+      documentId: z.string().optional().describe("Open document id; omit for the active tab."),
+      copy: z
+        .enum(["student", "solutions", "teacher"])
+        .default("student")
+        .describe("Teacher is an investigation rubric copy; solutions is the test answer copy."),
+      baseSnapshotId: z.string().optional().describe("Optional precondition from mauth_snapshot; rejects a changed source."),
+      idempotencyKey: z.string().optional().describe("Reuse this key to retrieve the same export on retry."),
+    }),
+    outputSchema: bridgeOutputSchema,
+    annotations: nonDestructiveWriteAnnotations,
+  },
+  async ({ documentId, copy, baseSnapshotId, idempotencyKey }) => {
+    const result = await bridgeRequest("/api/agent/current/pdf/export", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey || `mcp_pdf_${randomUUID()}` },
+      body: { documentId, copy, baseSnapshotId },
+    });
+    if (!result.success) return toolResult(result);
+    const uri = pdfResourceUri(result.artifact.id);
+    const response = toolResult({ ...result, artifact: { ...result.artifact, uri } });
+    response.content.push({
+      type: "resource_link",
+      uri,
+      name: result.artifact.filename,
+      mimeType: "application/pdf",
+      size: result.artifact.bytes,
+    });
+    return response;
+  },
+);
+server.registerTool(
+  "mauth_pdf_read",
+  {
+    title: "Read Exported Mauth PDF",
+    description:
+      "Retrieve an exported PDF as an embedded application/pdf MCP resource. Takes only an id returned by mauth_pdf_export; no arbitrary file paths.",
+    inputSchema: z.object({ id: z.string().uuid() }),
+    outputSchema: bridgeOutputSchema,
+    annotations: readOnlyAnnotations,
+  },
+  async ({ id }) => {
+    const result = await readPdfArtifact(id);
+    if (!result.success) return toolResult(result);
+    const { blob, ...artifact } = result.artifact;
+    const response = toolResult({ ...result, artifact });
+    response.content.push({ type: "resource", resource: { uri: pdfResourceUri(id), mimeType: "application/pdf", blob } });
+    return response;
+  },
 );
 
 server.registerTool(

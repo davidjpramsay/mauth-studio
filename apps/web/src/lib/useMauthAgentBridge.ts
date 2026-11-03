@@ -17,6 +17,8 @@ export interface MauthAgentBridgeHandlerResult {
 }
 
 export interface MauthAgentBridgeHandlers {
+  pdfExport: (payload: Record<string, unknown>) => Promise<MauthAgentBridgeHandlerResult>;
+  pdfRead: (payload: Record<string, unknown>) => Promise<MauthAgentBridgeHandlerResult>;
   snapshot: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
   preview: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
   apply: (payload: Record<string, unknown>) => MauthAgentBridgeHandlerResult | Promise<MauthAgentBridgeHandlerResult>;
@@ -56,6 +58,10 @@ function unknownErrorMessage(error: unknown) {
 async function runHandler(request: MauthAgentQueuedRequest, handlers: MauthAgentBridgeHandlers): Promise<MauthAgentBridgeHandlerResult> {
   try {
     switch (request.kind) {
+      case "pdf.export":
+        return await handlers.pdfExport(request.payload);
+      case "pdf.read":
+        return await handlers.pdfRead(request.payload);
       case "snapshot":
         return await handlers.snapshot(request.payload);
       case "actions.preview":

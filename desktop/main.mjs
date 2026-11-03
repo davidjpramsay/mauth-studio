@@ -15,6 +15,7 @@ import {
   agentConnectorInfo,
   packagedAgentConnectorPath,
 } from "./agent-connector.mjs";
+import { createPdfExportService, PDF_EXPORT_CHANNEL, PDF_READ_CHANNEL } from "./pdf-export.mjs";
 import { developmentRuntimePlan } from "./development-runtime.mjs";
 import { isRuntimeApiRequest } from "./local-api-auth.mjs";
 import {
@@ -356,7 +357,8 @@ function createWindow(webUrl, apiUrl, icon, preload, agentToken) {
     height: 980,
     minWidth: 1080,
     minHeight: 720,
-    backgroundColor: "#f8fafc",
+    // Chromium PDF paper margins inherit the native window background.
+    backgroundColor: "#ffffff",
     icon,
     show: false,
     webPreferences: {
@@ -497,6 +499,9 @@ async function launch() {
     log: desktopLog,
     refreshMenu: refreshApplicationMenu,
   });
+  const pdfExports = createPdfExportService({ getWindow: () => mainWindow, directory: path.join(app.getPath("userData"), "exports") });
+  ipcMain.handle(PDF_EXPORT_CHANNEL, (event, payload) => pdfExports.export(event, payload));
+  ipcMain.handle(PDF_READ_CHANNEL, (event, id) => pdfExports.read(event, id));
   ipcMain.removeHandler(MAUTH_AGENT_CONNECTOR_INFO_CHANNEL);
   ipcMain.handle(MAUTH_AGENT_CONNECTOR_INFO_CHANNEL, currentAgentConnectorInfo);
   ipcMain.removeHandler(MAUTH_DOCUMENTS_FOLDER_CHOOSE_CHANNEL);

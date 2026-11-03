@@ -49,6 +49,8 @@ interface UseEditorAgentBridgeControllerOptions {
   openDocuments?: () => MauthAgentOpenDocument[];
   activateDocument?: (documentId: string) => Promise<boolean>;
   documentLifecycle: MauthAgentDocumentLifecycleHandlers;
+  pdfExport: (payload: Record<string, unknown>) => Promise<import("@/lib/useMauthAgentBridge").MauthAgentBridgeHandlerResult>;
+  pdfRead: (payload: Record<string, unknown>) => Promise<import("@/lib/useMauthAgentBridge").MauthAgentBridgeHandlerResult>;
 }
 
 export function useEditorAgentBridgeController({
@@ -75,6 +77,8 @@ export function useEditorAgentBridgeController({
   openDocuments,
   activateDocument,
   documentLifecycle,
+  pdfExport,
+  pdfRead,
 }: UseEditorAgentBridgeControllerOptions) {
   const { agentFileState } = useMauthAgentFileStateController<QuestionBlock, FrontMatterConfig, FormattingConfig, LogoAsset>({
     activeProject,
@@ -118,5 +122,7 @@ export function useEditorAgentBridgeController({
     openDocuments,
     activateDocument,
     documentLifecycle,
+    pdfExport,
+    pdfRead,
   });
 }

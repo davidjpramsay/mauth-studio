@@ -196,6 +196,8 @@ The MCP server wraps the HTTP bridge and exposes:
 - `mauth_document_create`
 - `mauth_document_open`
 - `mauth_document_close`
+- `mauth_pdf_export`
+- `mauth_pdf_read`
 - `mauth_snapshot`
 - `mauth_actions_preview`
 - `mauth_actions_apply`
@@ -222,3 +224,28 @@ The action-preview and action-apply tool descriptions reinforce the same authori
 Run `pnpm agent:doctor` to check API health, web reachability, MCP dependencies, discovery docs, and active editor presence. Run `pnpm macos:build:agent` followed by `pnpm smoke:agent-connector` to exercise MCP negotiation and a live snapshot through the generated self-contained bundle.
 
 Keep `pnpm test:web-actions`, `pnpm smoke:context-menu-actions`, and `pnpm smoke:file-manager` green while evolving the bridge. Comments and suggestions are intentionally non-mutating review state; applying document edits still goes through preview/apply action batches.
+
+## Native PDF Export
+
+Use `mauth_pdf_export` for assessment exports; the harness needs only MCP. It calls the installed desktop app's canonical React print stage, waits for fonts and diagram readiness, checks oversized question blocks, and invokes Electron `printToPDF` with CSS page size, backgrounds and no Chromium headers/footers. It never opens a print/save dialog. Browser-only editors return `DESKTOP_REQUIRED`.
+
+```json
+{
+  "copy": "student",
+  "documentId": "<open document id>",
+  "baseSnapshotId": "<optional current snapshot id>",
+  "idempotencyKey": "<stable retry key>"
+}
+```
+
+Math Notes have one copy, requested with `student`. `copy` defaults to `student`; `solutions` exports test answers, and `teacher` is an investigation rubric copy. The target is an immutable capture of that open tab, including unsaved work and current logo assets. Export does not activate the tab, change copy mode or selection, save the document, add history, or alter its revision. A supplied stale snapshot returns `STALE_SNAPSHOT`. Concurrent print/export returns `PRINT_BUSY`; failed or pending diagram/font readiness returns `PRINT_NOT_READY`, and oversized question blocks return `PRINT_LAYOUT_OVERFLOW`. Successful rendering is not mathematical/content certification.
+
+The response includes `artifact` (`id`, `path`, `filename`, `mimeType`, `bytes`, `pages`, `sha256`, `uri`) and `source` (`documentId`, `snapshotId`, `path`, loaded `revision`, `dirty`, `copy`, `contentSha256`). The content digest covers the captured document and shared logo assets; the PDF digest covers actual output bytes. `pages` counts the prepared print layout. Student and Solutions PDFs should both be inspected after assessment edits.
+
+PDFs are private, uniquely named artifacts under the app-data `exports/<uuid>/` directory, separate from authored files, autosave and version snapshots. Existing PDFs are never overwritten. They remain until removed locally; keep required deliverables elsewhere. Export is limited to 32 MiB. There is no arbitrary output path or generic filesystem read argument.
+
+Call `mauth_pdf_read` with the returned `id` to receive an embedded `application/pdf` resource, or use MCP `resources/read` on `mauth://exports/<id>/pdf`. Retrieval travels through the app's authenticated bridge and narrow preload API; the connector does not read arbitrary local files. The app must be running. This allows a harness to retrieve and review PDF bytes through MCP alone. Read failures return `PDF_NOT_FOUND`.
+
+HTTP equivalents are `POST /api/agent/current/pdf/export` (requires `Idempotency-Key`) and `POST /api/agent/current/pdf/read` with `{ "id": "<export uuid>" }`. Exports use the longer bridge timeout; use a client timeout above 60 seconds for complex papers. Reuse the same idempotency key for an identical retry. A connector already running when the app is upgraded needs reconnection to discover new tool definitions; restarting the teacher's app alone does not replace an existing MCP process.
+
+For source verification, `pnpm smoke:agent-pdf` exports both copies of the active assessment and verifies MCP resource bytes, SHA-256, retry identity and unchanged tabs/snapshot. `--connector <bundled executable>` exercises the installed connector; `--title-contains <text>` selects matching open assessment tabs and `--output <folder>` optionally retains the received PDF bytes and evidence outside teacher storage. No browser or HTTP fallback is used by this smoke.

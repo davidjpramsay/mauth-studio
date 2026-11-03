@@ -465,3 +465,49 @@ def test_apply_idempotency_replays_same_response_and_rejects_mismatch() -> None:
     )
     assert mismatch_response.status_code == 409
     assert mismatch_response.json()["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+
+def test_pdf_export_validates_before_dispatch_and_requires_idempotency() -> None:
+    assert _request_timeout_seconds("pdf.export") == MUTATION_REQUEST_TIMEOUT_SECONDS
+    for invalid_copy in ("wrong", [], {}, 42, None):
+        assert client.post("/api/agent/current/pdf/export", json={"copy": invalid_copy}).status_code == 400
+    assert client.post("/api/agent/current/pdf/export", json={"documentId": 12}).status_code == 400
+    missing = client.post("/api/agent/current/pdf/export", json={"copy": "student"})
+    assert missing.status_code == 400
+    assert missing.json()["code"] == "INVALID_REQUEST"
+    offline = client.post(
+        "/api/agent/current/pdf/export", json={"copy": "student"}, headers={"Idempotency-Key": "pdf-1"}
+    )
+    assert offline.status_code == 503
+    assert client.post("/api/agent/current/pdf/read", json={}).status_code == 400
+
+
+def test_pdf_export_forwards_copy_and_snapshot_and_replays_same_artifact() -> None:
+    session_id = client.post("/api/agent/current/browser/register", json={"sessionId": "pdf-editor"}).json()[
+        "sessionId"
+    ]
+    result = {}
+    payload = {"copy": "solutions", "documentId": "draft:pdf", "baseSnapshotId": "snap_pdf"}
+    headers = {"Idempotency-Key": "pdf-retry"}
+    thread = Thread(
+        target=lambda: result.update(
+            response=client.post("/api/agent/current/pdf/export", json=payload, headers=headers)
+        )
+    )
+    thread.start()
+    queued = client.get(
+        "/api/agent/current/browser/requests", params={"sessionId": session_id, "timeoutSeconds": 2}
+    ).json()["request"]
+    assert queued["kind"] == "pdf.export"
+    assert queued["payload"] == {**payload, "idempotencyKey": "pdf-retry"}
+    body = {"success": True, "artifact": {"id": "pdf-proof", "pages": 9}, "source": {"copy": "solutions"}}
+    client.post(
+        "/api/agent/current/browser/respond",
+        json={"sessionId": session_id, "requestId": queued["requestId"], "status": 200, "body": body},
+    )
+    thread.join(timeout=3)
+    assert result["response"].status_code == 200
+    repeated = client.post("/api/agent/current/pdf/export", json=payload, headers=headers)
+    assert repeated.json() == result["response"].json()
+    changed = client.post("/api/agent/current/pdf/export", json={**payload, "copy": "student"}, headers=headers)
+    assert changed.status_code == 409

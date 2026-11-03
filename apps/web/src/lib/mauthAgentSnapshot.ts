@@ -294,6 +294,8 @@ export function buildMauthAgentSnapshot<
       documents: { method: "GET", href: "/api/agent/current/documents" },
       documentCreate: { method: "POST", href: "/api/agent/current/documents/create" },
       documentOpen: { method: "POST", href: "/api/agent/current/documents/open" },
+      pdfExport: { method: "POST", href: "/api/agent/current/pdf/export" },
+      pdfRead: { method: "POST", href: "/api/agent/current/pdf/read" },
       documentClose: { method: "POST", href: "/api/agent/current/documents/close" },
       presence: { method: "POST", href: "/api/agent/current/presence" },
       events: "/api/agent/current/events?after=0",

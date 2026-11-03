@@ -46,6 +46,8 @@ interface UseMauthAgentBridgeControllerOptions<
   openDocuments?: () => MauthAgentOpenDocument[];
   activateDocument?: (documentId: string) => Promise<boolean>;
   documentLifecycle: MauthAgentDocumentLifecycleHandlers;
+  pdfExport: (payload: Record<string, unknown>) => Promise<import("@/lib/useMauthAgentBridge").MauthAgentBridgeHandlerResult>;
+  pdfRead: (payload: Record<string, unknown>) => Promise<import("@/lib/useMauthAgentBridge").MauthAgentBridgeHandlerResult>;
 }
 
 function agentBridgeError(status: number, code: string, error: string, extra: Record<string, unknown> = {}): MauthAgentBridgeHandlerResult {
@@ -75,6 +77,8 @@ export function useMauthAgentBridgeController<
   openDocuments,
   activateDocument,
   documentLifecycle,
+  pdfExport,
+  pdfRead,
 }: UseMauthAgentBridgeControllerOptions<Q, F, C>) {
   const selectedDocumentId = useStableEvent(() => activeDocumentId?.());
 
@@ -265,6 +269,8 @@ export function useMauthAgentBridgeController<
       preview: (payload) => withTargetDocument(payload, handleAgentActionsPreview),
       apply: (payload) => withTargetDocument(payload, handleAgentActionsApply),
       validation: (payload) => withTargetDocument(payload, handleAgentValidation),
+      pdfExport,
+      pdfRead,
       documentsList: documentLifecycle.list,
       documentCreate: documentLifecycle.create,
       documentOpen: documentLifecycle.open,

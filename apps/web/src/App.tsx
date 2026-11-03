@@ -39,6 +39,7 @@ import { parseMauthDocumentActionProposal } from "@/lib/mauthActionProposal";
 import { useEditorProjectPersistenceController } from "@/hooks/useEditorProjectPersistenceController";
 import { useMauthDialogController } from "@/hooks/useMauthDialogController";
 import type { DraftAutosaveStatus } from "@/hooks/useProjectFileStatus";
+import { usePdfExportController } from "@/hooks/usePdfExportController";
 import { usePrintController } from "@/hooks/usePrintController";
 import { usePreviewReadinessController } from "@/hooks/usePreviewReadinessController";
 import { useEditorNavigationController } from "@/hooks/useEditorNavigationController";
@@ -480,12 +481,6 @@ export default function App() {
       : defaultSavedTestName(frontMatterRef.current);
     return printFileNameForDocument(frontMatterRef.current, activeFileName, showSolutionsRef.current);
   }, [activeProjectFilePathRef, frontMatterRef, showSolutionsRef]);
-  const printDocument = usePrintController({
-    resolvePrintTitle,
-    setPrintPreviewMounted,
-    documentKey: `${currentDocumentFingerprint}:${previewShowSolutions}`,
-    confirm: mauthDialogs.confirm,
-  });
 
   useEditorStorageHydrationController({
     activeProject,
@@ -630,6 +625,18 @@ export default function App() {
   const captureCurrentDocumentTab = useStableEvent(documentTabsController.captureCurrentDocument);
   const replaceDocumentTabsFromPersistence = useStableEvent(documentTabsController.replaceTabsFromPersistence);
   const currentDocumentTabsSnapshot = useStableEvent(documentTabsController.currentTabsSnapshot);
+  const pdfExportController = usePdfExportController({
+    readTabs: currentDocumentTabsSnapshot,
+    activeId: () => documentTabsController.activeTabIdRef.current,
+    readLogos: () => logosRef.current,
+  });
+  const printDocument = usePrintController({
+    resolvePrintTitle,
+    setPrintPreviewMounted,
+    documentKey: `${currentDocumentFingerprint}:${previewShowSolutions}`,
+    exportBusyRef: pdfExportController.busyRef,
+    confirm: mauthDialogs.confirm,
+  });
   const [documentTabsHydrated, setDocumentTabsHydrated] = useState(false);
   const [sessionBackupUnavailable, setSessionBackupUnavailable] = useState(false);
   useEffect(() => {
@@ -1575,6 +1582,8 @@ export default function App() {
       return true;
     },
     documentLifecycle: agentDocumentLifecycle,
+    pdfExport: pdfExportController.exportPdf,
+    pdfRead: pdfExportController.readPdf,
   });
 
   function isActiveEditorAnchor(anchor: string) {
@@ -1822,9 +1831,9 @@ export default function App() {
         actionProposal={actionProposalController}
         contextMenu={contextMenuController}
         print={{
-          mounted: printPreviewMounted,
-          editorDocumentOpen,
-          preview: {
+          mounted: printPreviewMounted || Boolean(pdfExportController.preview),
+          editorDocumentOpen: editorDocumentOpen || Boolean(pdfExportController.preview),
+          preview: pdfExportController.preview ?? {
             frontMatter,
             logos,
             totalMarks,
