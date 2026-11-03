@@ -1,9 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { GraphConfig } from "@mauth-studio/shared";
 import { buildStatsChartPlotlyConfig, normalizeStatsChartSpec } from "@mauth-studio/diagram-plotly";
 
 import { MathText, mathTextHasMath } from "@/components/MathText";
 import type { PrintRenderState } from "@/lib/printReadiness";
+
+type PlotArea = { l: number; t: number; w: number; h: number };
 
 function withoutAxisTitle(axis: unknown) {
   if (!axis || typeof axis !== "object") return axis;
@@ -56,6 +58,15 @@ function expandPlotClipRects(element: HTMLElement & { data?: Array<{ type?: stri
 
 export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [plotArea, setPlotArea] = useState<PlotArea | null>(null);
+  const updatePlotArea = useCallback((element: HTMLElement) => {
+    const size = (element as HTMLElement & { _fullLayout?: { _size?: PlotArea } })._fullLayout?._size;
+    if (!size) return;
+    const next = { l: size.l, t: size.t, w: size.w, h: size.h };
+    setPlotArea((current) =>
+      current && current.l === next.l && current.t === next.t && current.w === next.w && current.h === next.h ? current : next,
+    );
+  }, []);
   const chartConfig = useMemo(
     () => (typeof graphConfig?.title === "string" ? { ...graphConfig, data: { ...graphConfig.data, title: "" } } : graphConfig),
     [graphConfig],
@@ -76,18 +87,29 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
     observer.observe(label);
     return () => observer.disconnect();
   }, [verticalXLabel, xLabel]);
-  const horizontalYLabel = spec.data.chartType !== "box" && spec.data.yLabelOrientation === "horizontal" && Boolean(yLabel.trim());
+  const showYLabel = spec.data.chartType !== "box" && Boolean(yLabel.trim());
+  const horizontalYLabel = spec.data.yLabelOrientation === "horizontal";
+  const yLabelRef = useRef<HTMLSpanElement>(null);
+  const [yLabelWidth, setYLabelWidth] = useState(60);
+  useLayoutEffect(() => {
+    const label = yLabelRef.current;
+    if (!showYLabel || !label) return;
+    const measure = () => setYLabelWidth(label.offsetWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(label);
+    return () => observer.disconnect();
+  }, [showYLabel, yLabel]);
   const labelMath = useMemo(
     () => ({
       title: mathTextHasMath(title),
       x: mathTextHasMath(xLabel),
-      y: mathTextHasMath(yLabel),
     }),
-    [title, xLabel, yLabel],
+    [title, xLabel],
   );
   const plotlyConfig = useMemo(() => {
-    const config = buildStatsChartPlotlyConfig(chartConfig, { xLabelWidth });
-    if (!labelMath.title && !labelMath.x && !labelMath.y && !horizontalYLabel && !verticalXLabel) return config;
+    const config = buildStatsChartPlotlyConfig(chartConfig, { xLabelWidth, yLabelWidth });
+    if (!labelMath.title && !labelMath.x && !showYLabel && !verticalXLabel) return config;
 
     return {
       ...config,
@@ -95,10 +117,11 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
         ...config.layout,
         title: labelMath.title ? undefined : config.layout.title,
         xaxis: labelMath.x || verticalXLabel ? withoutAxisTitle(config.layout.xaxis) : config.layout.xaxis,
-        yaxis: labelMath.y || horizontalYLabel ? withoutAxisTitle(config.layout.yaxis) : config.layout.yaxis,
+        yaxis: showYLabel ? withoutAxisTitle(config.layout.yaxis) : config.layout.yaxis,
       },
     };
-  }, [chartConfig, horizontalYLabel, labelMath, verticalXLabel, xLabelWidth]);
+  }, [chartConfig, labelMath, showYLabel, verticalXLabel, xLabelWidth, yLabelWidth]);
+  const margins = plotlyConfig.layout.margin as { l: number; t: number; b: number };
   const plotlyConfigKey = useMemo(() => JSON.stringify(plotlyConfig), [plotlyConfig]);
   const [error, setError] = useState("");
   const [printRenderState, setPrintRenderState] = useState<PrintRenderState>("loading");
@@ -121,6 +144,7 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
           .then(() => {
             if (!cancelled) {
               expandPlotClipRects(element, true);
+              updatePlotArea(element);
               setPrintRenderState("ready");
             }
           })
@@ -140,7 +164,7 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
       cancelled = true;
       plotly?.purge(element);
     };
-  }, [plotlyConfigKey]);
+  }, [plotlyConfigKey, updatePlotArea]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -153,7 +177,10 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
           if (!element.isConnected || element.offsetWidth <= 0 || element.offsetHeight <= 0) return;
           void Promise.resolve(module.default.Plots?.resize(element))
             .then(() => {
-              if (element.isConnected) expandPlotClipRects(element, true);
+              if (element.isConnected) {
+                expandPlotClipRects(element, true);
+                updatePlotArea(element);
+              }
             })
             .catch(() => {
               // Plotly can reject if layout changes hide the plot between ResizeObserver and resize.
@@ -163,7 +190,7 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [updatePlotArea]);
 
   if (error) {
     return (
@@ -220,25 +247,27 @@ export function StatsChartDiagram({ graphConfig }: { graphConfig?: GraphConfig |
           </span>
         </div>
       ) : null}
-      {horizontalYLabel ? (
+      {showYLabel ? (
         <div
-          className={`pointer-events-none absolute left-12 right-6 flex justify-start text-left text-black ${title ? "top-7" : "top-1"}`}
+          className="pointer-events-none absolute flex items-center justify-center text-center text-black"
           data-mauth-label-text={yLabel}
           data-mauth-axis-label="y"
-          data-mauth-label-orientation="horizontal"
+          data-mauth-label-orientation={horizontalYLabel ? "horizontal" : "vertical"}
+          style={{
+            left: 8,
+            top: plotArea?.t ?? margins.t,
+            width: (plotArea?.l ?? margins.l) - 48,
+            height: plotArea?.h ?? plotlyConfig.metadata.heightPx - margins.t - margins.b,
+            fontSize: `${spec.options?.fontSizePt ?? 10}pt`,
+          }}
         >
-          <MathText source={yLabel} />
-        </div>
-      ) : spec.data.chartType !== "box" && labelMath.y && yLabel ? (
-        <div
-          className="pointer-events-none absolute bottom-12 left-1 top-12 flex w-10 items-center justify-center text-center text-black"
-          data-mauth-label-text={yLabel}
-          data-mauth-axis-label="y"
-          data-mauth-label-orientation="vertical"
-        >
-          <div className="-rotate-90 whitespace-nowrap">
+          <span
+            ref={yLabelRef}
+            className="inline-flex shrink-0 items-center whitespace-nowrap"
+            style={{ transform: horizontalYLabel ? undefined : "rotate(-90deg)" }}
+          >
             <MathText source={yLabel} />
-          </div>
+          </span>
         </div>
       ) : null}
     </div>

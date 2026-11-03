@@ -979,7 +979,7 @@ function chartTraces(spec: StatsChartSpec) {
 
 export function buildStatsChartPlotlyConfig(
   input?: GraphConfig | StatsChartSpec | null,
-  axisLabelMeasurements?: { xLabelWidth: number },
+  axisLabelMeasurements?: { xLabelWidth?: number; yLabelWidth?: number },
 ): PlotlyChartConfig {
   const spec = normalizeStatsChartSpec(input);
   const options = spec.options ?? {};
@@ -1030,9 +1030,14 @@ export function buildStatsChartPlotlyConfig(
       bargap: data.chartType === "binomial" || histogram?.discrete ? 0.18 : 0,
       boxgap: 0.35,
       margin: {
-        l: data.chartType === "box" || !data.yLabel?.trim() ? 54 : horizontalYLabel ? 60 : 78,
+        l:
+          data.chartType === "box" || !data.yLabel?.trim()
+            ? 54
+            : horizontalYLabel
+              ? Math.max(78, Math.ceil((axisLabelMeasurements?.yLabelWidth ?? 60) + 52))
+              : 78,
         r: 26,
-        t: data.title ? (horizontalYLabel ? 58 : 42) : horizontalYLabel ? 34 : 20,
+        t: data.title ? 42 : 20,
         b: verticalXLabel ? Math.max(54, Math.ceil((axisLabelMeasurements?.xLabelWidth ?? 60) + 44)) : 54,
       },
       paper_bgcolor: "#ffffff",

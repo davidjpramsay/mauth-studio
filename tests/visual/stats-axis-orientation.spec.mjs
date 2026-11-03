@@ -51,12 +51,24 @@ for (const width of [1440, 900]) {
     const yControl = page.getByRole("combobox", { name: "Diagram 1 y-axis label orientation", exact: true });
     await expect(xControl).toHaveValue("horizontal");
     await expect(yControl).toHaveValue("vertical");
-    await xControl.selectOption("vertical");
+    const firstChart = preview.locator(".stats-chart-diagram").first();
+    await expect(firstChart).toHaveAttribute("data-mauth-print-render-state", "ready");
+    const labelCentreY = () =>
+      firstChart.evaluate((chart) => {
+        const glyph = chart.querySelector('[data-mauth-axis-label="y"] span') ?? chart.querySelector(".ytitle");
+        if (!glyph) return null;
+        const rect = glyph.getBoundingClientRect();
+        return rect.y + rect.height / 2;
+      });
+    await expect.poll(labelCentreY).not.toBeNull();
+    const verticalCentre = await labelCentreY();
     await yControl.selectOption("horizontal");
+    await expect.poll(labelCentreY).toBeCloseTo(verticalCentre, 0);
     await page.getByRole("button", { name: "Undo", exact: true }).click();
     await expect(yControl).toHaveValue("vertical");
     await page.getByRole("button", { name: "Redo", exact: true }).click();
     await expect(yControl).toHaveValue("horizontal");
+    await xControl.selectOption("vertical");
     await expect
       .poll(async () => (await readDraft(page)).questions[0].contentBlocks[0].graphConfig.data.yLabelOrientation)
       .toBe("horizontal");
@@ -83,6 +95,21 @@ for (const width of [1440, 900]) {
         for (const label of await chart.locator("[data-mauth-axis-label]").all()) {
           const glyph = label.locator("span").first();
           const box = await glyph.boundingBox();
+          if ((await label.getAttribute("data-mauth-axis-label")) === "y") {
+            const plotCentre = await chart.locator(".js-plotly-plot").evaluate((plot) => {
+              const rect = plot.getBoundingClientRect();
+              const layout = plot._fullLayout;
+              return rect.y + (layout._size.t + layout._size.h / 2) * (rect.height / layout.height);
+            });
+            const details = await chart.evaluate((node) => {
+              const plot = node.querySelector(".js-plotly-plot");
+              return { frame: node.getBoundingClientRect().toJSON(), margin: plot._fullLayout.margin, size: plot._fullLayout._size };
+            });
+            expect(
+              Math.abs(box.y + box.height / 2 - plotCentre),
+              JSON.stringify({ source: await label.getAttribute("data-mauth-label-text"), box, plotCentre, details }),
+            ).toBeLessThan(1);
+          }
           expect(box.x).toBeGreaterThanOrEqual(frame.x - 1);
           expect(box.y).toBeGreaterThanOrEqual(frame.y - 1);
           expect(box.x + box.width).toBeLessThanOrEqual(frame.x + frame.width + 1);

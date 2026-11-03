@@ -1,6 +1,6 @@
 # Current State And Handoff
 
-Last reviewed: 2 November 2026.
+Last reviewed: 3 November 2026.
 
 This is the resumable checkpoint for a new developer or model. Git, tests, and a fresh runtime check override this document if they disagree.
 
@@ -52,8 +52,14 @@ branch: CURRENT
 baseline commit: HEAD
 App.tsx: 1843 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; End of Test page footer is installed; four PDFs and preserved native document state are verified
+worktree: clean at this checkpoint; statistics y-axis labels stay beside the axis; installed-app and preserved teacher documents are verified
 ```
+
+### 3 November Statistics Y-Axis Label Position
+
+The statistics-chart Horizontal/Vertical option now keeps the y label beside the vertical axis at the plot midpoint. Horizontal text no longer becomes a top-left heading or adds a top margin. The shared prose/MathJax label surface uses the resolved Plotly drawing area, including automatic tick clearance, and reserves measured left space for horizontal wording. X-axis orientation and non-statistics renderers retain their existing behavior; box plots still omit the unused y label. This is a rendering-only change with no document schema, stored observations, ranges or teacher-option migration. The diagram brain and action reference describe the same placement rule.
+
+The regression reproduces the previous top jump against the earlier installed renderer. Full `pnpm check` passes with 139 API, 757 web/action, 13 Plotly, 17 lifecycle, six Penrose, 84 launcher and five Quick Look tests. Six focused browser checks pass at 1440/900 px for orientation controls, fixed vertical position, measured label clearance, prose/LaTeX, unchanged observations, hidden answers, Undo/Redo, reopening, column clipping and both print copies. Browser plugin not available; isolated repository Playwright fixtures intercept every API route. Screenshots were visually reviewed. The hardened local build/install and strict signature verification pass; all 228 regular resource files match the checked build. All five recovery/document files were byte-identical through normal quit and installation under the existing restart authorisation. Reopening preserves all three documents, ids/order, revisions 8/15/15, clean states and saved-file bytes; recovery timestamps/status refresh normally. The installed connector doctor and Documents-folder listing pass, and mounted native statistics previews report no label-bound or collision issues. Native screenshot verification confirms the horizontal y label beside the midpoint in practice Question 4. Two assessment export checks pass with aligned plot frames in all four nine-page Student/Solutions PDFs, and the delivery PDFs are refreshed. No teacher document or schema migration is required. Evidence is under `/private/tmp/mauth-ylabel-rotation-20261103`.
 
 ### 2 November Axis Label Orientation
 
