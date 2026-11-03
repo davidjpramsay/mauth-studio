@@ -29,6 +29,8 @@ try {
   const tools = await client.listTools(undefined, { signal: AbortSignal.timeout(10_000) });
   const toolNames = new Set(tools.tools.map((tool) => tool.name));
   for (const expected of [
+    "mauth_pdf_export",
+    "mauth_pdf_read",
     "mauth_snapshot",
     "mauth_diagram_tools",
     "mauth_diagrams_inspect",

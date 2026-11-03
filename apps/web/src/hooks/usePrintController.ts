@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { flushSync } from "react-dom";
 
 import { printReadinessMessage, waitForPrintPreviewReady } from "@/lib/printReadiness";
@@ -8,10 +8,17 @@ interface UsePrintControllerOptions {
   resolvePrintTitle: () => string;
   setPrintPreviewMounted: (mounted: boolean) => void;
   documentKey: string;
+  exportBusyRef?: MutableRefObject<boolean>;
   confirm: MauthDialogActions["confirm"];
 }
 
-export function usePrintController({ resolvePrintTitle, setPrintPreviewMounted, documentKey, confirm }: UsePrintControllerOptions) {
+export function usePrintController({
+  resolvePrintTitle,
+  setPrintPreviewMounted,
+  documentKey,
+  confirm,
+  exportBusyRef,
+}: UsePrintControllerOptions) {
   const originalDocumentTitleRef = useRef<string | null>(null);
   const printRequestRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -34,6 +41,7 @@ export function usePrintController({ resolvePrintTitle, setPrintPreviewMounted, 
   }, [resolvePrintTitle]);
 
   const printDocument = useCallback(() => {
+    if (exportBusyRef?.current) return;
     const requestId = ++printRequestRef.current;
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -65,7 +73,7 @@ export function usePrintController({ resolvePrintTitle, setPrintPreviewMounted, 
         if (!retry || requestId !== printRequestRef.current) return;
       }
     })();
-  }, [finishPrint, setPrintDocumentTitle, setPrintPreviewMounted]);
+  }, [finishPrint, setPrintDocumentTitle, setPrintPreviewMounted, exportBusyRef]);
 
   useEffect(() => {
     return () => {
@@ -88,10 +96,13 @@ export function usePrintController({ resolvePrintTitle, setPrintPreviewMounted, 
 
   useEffect(() => {
     const handleBeforePrint = () => {
+      if (exportBusyRef?.current) return;
       setPrintDocumentTitle();
       flushSync(() => setPrintPreviewMounted(true));
     };
-    const handleAfterPrint = finishPrint;
+    const handleAfterPrint = () => {
+      if (!exportBusyRef?.current) finishPrint();
+    };
 
     window.addEventListener("beforeprint", handleBeforePrint);
     window.addEventListener("afterprint", handleAfterPrint);
@@ -100,7 +111,7 @@ export function usePrintController({ resolvePrintTitle, setPrintPreviewMounted, 
       window.removeEventListener("beforeprint", handleBeforePrint);
       window.removeEventListener("afterprint", handleAfterPrint);
     };
-  }, [finishPrint, setPrintDocumentTitle, setPrintPreviewMounted]);
+  }, [finishPrint, setPrintDocumentTitle, setPrintPreviewMounted, exportBusyRef]);
 
   return printDocument;
 }

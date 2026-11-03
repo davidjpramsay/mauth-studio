@@ -111,7 +111,8 @@
     "When converting a past exam section, choose the matching exam section preset, set the structure table row for the open section to useCurrentDocument: true so question count and marks come from the current Mauth document, and enter other source-paper sections manually in frontMatter.exam.structureRows unless a companion section file has been explicitly provided.",
     "Use the school logo bank for exam covers. For current school exams, select the matching logo and school name rather than leaving the exam logo blank.",
     "Do not use the Test format panel or document formatting actions for per-question layout, table details, diagram/chart settings, answer spaces, or worked-solution placement; those belong to their own structured modules.",
-    "Do not use layout-only text content when a structured block exists."
+    "Do not use layout-only text content when a structured block exists.",
+    "Export printable assessment copies through mauth_pdf_export in the installed desktop app and retrieve them with mauth_pdf_read or the returned MCP resource URI. The authoring harness should use MCP only for Mauth, without browser or OS print automation. Export both Student and Solutions copies after layout edits and inspect their actual rendered pages; successful export alone does not certify layout or content."
   ],
   "checks": [
     "No unnecessary trailing space block before a manual page break.",

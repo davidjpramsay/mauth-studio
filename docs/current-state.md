@@ -50,10 +50,16 @@ For assessment authoring, inspect the live document through the installed app's 
 ```text
 branch: CURRENT
 baseline commit: HEAD
-App.tsx: 1843 lines
+App.tsx: 1852 lines
 SelectionInspector.tsx: 153 lines after the focused basic-block, diagram-router, renderer-specific settings extractions, explicit Solutions-mode binding, Investigation diagram selection support, pane-local responsive ownership, Content return action, and actionable empty state
-worktree: clean at this checkpoint; statistics y-axis labels stay beside the axis; installed-app and preserved teacher documents are verified
+worktree: clean at this checkpoint; native MCP PDF export/retrieval and preserved teacher documents are verified
 ```
+
+### 3 November MCP PDF Export
+
+New `mauth_pdf_export` and `mauth_pdf_read` tools plus a PDF resource template let authoring harnesses use MCP alone for Mauth PDF export and retrieval. Export captures any open tab and shared logos without activating it, changing copy mode, editing/saving or adding history. It uses the canonical print stage and readiness gate, then main-frame-only preload IPC to Electron printToPDF. Private unique artifacts live under app-data exports, separate from teacher documents. The response identifies source snapshot, loaded revision, dirty state, copy, source digest, output digest and prepared pages. Optional snapshot preconditions, idempotent retries, bounded 32 MiB output, readiness/overflow errors and browser-only rejection are explicit. Human print events cannot replace the captured export copy.
+
+Full `pnpm check` passes with 141 API, 757 web/action, 17 lifecycle, 13 Plotly, six Penrose, 87 launcher and five Quick Look tests. Seven isolated renderer checks cover copy selection, unchanged state, stale/missing targets, investigation Teacher and Notes copies, oversized blocks, failed diagrams and dark-mode printing. Browser plugin not available; repository Playwright fixtures intercept every API route. The installed hardened build passes strict signing and all 228 regular resource files match the tested bundle. The doctor and 20-tool connector smoke pass. Native MCP-only acceptance exports and retrieves both copies of practice and actual tests, verifies idempotent retry/resource bytes, SHA-256 and unchanged active snapshot/tabs. All four PDFs have nine A4 pages, unchanged extracted content, 45 marks and 50 minutes. Every page was rendered and visually reviewed; all 36 page margins are pure white. Print CSS forces light paper, and the native window has a white base because Chromium PDF margins inherit that base colour. The screen theme is preserved. The delivery PDFs are refreshed from MCP bytes. Two further native MCP exports of the ten-page showcase exercise Penrose geometry/network/Venn, 3D, vectors, function graphs, distributions, choices and table answers; both copies render and retrieve successfully without changing its revision 8 or the selected actual-test tab. Saved files, tab ids/order, revisions 8/15/15, clean state and save baselines are unchanged; recovery timestamps/status/navigation refresh normally on reopening. Source and local installed builds are newer than the public v0.1.5 installer; no notarized public release was produced. Evidence is under `/private/tmp/mauth-mcp-pdf-20261103` and `/private/tmp/mauth-mcp-pdf-*.log`.
 
 ### 3 November Statistics Y-Axis Label Position
 

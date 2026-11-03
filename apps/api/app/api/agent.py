@@ -444,7 +444,7 @@ def _dispatch_to_browser(kind: str, payload: dict[str, Any]) -> tuple[int, dict[
 
 
 def _request_timeout_seconds(kind: str) -> int:
-    if kind in {"actions.apply", "document.create", "document.open", "document.close"}:
+    if kind in {"actions.apply", "document.create", "document.open", "document.close", "pdf.export", "pdf.read"}:
         return MUTATION_REQUEST_TIMEOUT_SECONDS
     return REQUEST_TIMEOUT_SECONDS
 
@@ -617,6 +617,32 @@ def apply_current_actions(
         idempotency_key=idempotency_key,
         operation="actions.apply",
     )
+
+
+@agent_router.post("/pdf/export")
+def export_current_pdf(
+    payload: dict[str, Any] = JSON_BODY, idempotency_key: str | None = IDEMPOTENCY_KEY_HEADER
+) -> JSONResponse:
+    if not isinstance(payload.get("copy", "student"), str) or payload.get("copy", "student") not in {
+        "student",
+        "solutions",
+        "teacher",
+    }:
+        return _json_response(400, _error_body("INVALID_REQUEST", "copy must be student, solutions or teacher."))
+    for key in ("documentId", "baseSnapshotId"):
+        if key in payload and (not isinstance(payload[key], str) or not payload[key]):
+            return _json_response(400, _error_body("INVALID_REQUEST", f"{key} must be a non-empty string."))
+    return _dispatch_idempotent_browser_request(
+        kind="pdf.export", payload=payload, idempotency_key=idempotency_key, operation="pdf.export"
+    )
+
+
+@agent_router.post("/pdf/read")
+def read_exported_pdf(payload: dict[str, Any] = JSON_BODY) -> JSONResponse:
+    if not isinstance(payload.get("id"), str) or not payload["id"]:
+        return _json_response(400, _error_body("INVALID_REQUEST", "An export id is required."))
+    status_code, body = _dispatch_to_browser("pdf.read", payload)
+    return _json_response(status_code, body)
 
 
 @agent_router.post("/validation/run")
@@ -842,6 +868,8 @@ def mauth_agent_discovery() -> dict[str, Any]:
         "docs": "/agent-docs",
         "endpoints": {
             "snapshot": "/api/agent/current/snapshot",
+            "pdfExport": "/api/agent/current/pdf/export",
+            "pdfRead": "/api/agent/current/pdf/read",
             "documents": "/api/agent/current/documents",
             "documentCreate": "/api/agent/current/documents/create",
             "documentOpen": "/api/agent/current/documents/open",

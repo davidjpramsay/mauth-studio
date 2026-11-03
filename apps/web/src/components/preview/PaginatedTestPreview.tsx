@@ -706,7 +706,10 @@ export const PaginatedTestPreview = memo(function PaginatedTestPreview({
                           </div>
                         </div>
                         {page.overflow ? (
-                          <div className="mt-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                          <div
+                            data-mauth-page-overflow="true"
+                            className="mt-6 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900"
+                          >
                             A single block in this question is taller than the available A4 page space.
                           </div>
                         ) : null}

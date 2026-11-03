@@ -5,6 +5,10 @@ declare const __MAUTH_WEB_VERSION__: string;
 
 interface Window {
   mauthDesktop?: {
+    exportPdf?: (payload: {
+      title: string;
+    }) => Promise<{ id: string; path: string; filename: string; mimeType: string; bytes: number; sha256: string }>;
+    readPdf?: (id: string) => Promise<{ id: string; filename: string; mimeType: string; blob: string }>;
     openDocuments?: () => Promise<boolean>;
     chooseDocumentSavePath?: (defaultPath: string) => Promise<string | null>;
     revealDocument?: (filePath: string) => Promise<void>;

@@ -28,7 +28,7 @@ test("MCP connector publishes the complete local document and authoring contract
     const catalog = await client.readResource({ uri: ACTION_CATALOG_URI });
     assert.equal(JSON.parse(catalog.contents[0].text).version, 1);
     const tools = new Map(result.tools.map((tool) => [tool.name, tool]));
-    assert.equal(tools.size, 18);
+    assert.equal(tools.size, 20);
     assert.ok(resources.resources.some((resource) => resource.uri === DIAGRAM_TOOLS_URI));
     const guideResource = await client.readResource({ uri: DIAGRAM_TOOLS_URI });
     assert.equal(JSON.parse(guideResource.contents[0].text).tools.length, 9);
@@ -51,6 +51,8 @@ test("MCP connector publishes the complete local document and authoring contract
     assert.equal(guide.structuredContent.exampleGraphConfig.type, "geometricConstruction");
     assert.deepEqual(JSON.parse(guide.content[0].text), guide.structuredContent);
     for (const name of [
+      "mauth_pdf_export",
+      "mauth_pdf_read",
       "mauth_documents_list",
       "mauth_document_create",
       "mauth_document_open",
@@ -390,5 +392,58 @@ test("Penrose scale preserves paper stroke, dash and dot sizes without moving ge
     const answerTitle = [...svg.querySelectorAll("title")].find((node) => node.textContent.includes("rightAngleMark")).textContent;
     const answerMark = shape(answerTitle);
     assert.ok(Math.abs(+answerMark.getAttribute("stroke-width") * scale - 1.7) < 0.002);
+  }
+});
+
+test("PDF tools return local provenance and retrieve binary resources entirely through MCP", async () => {
+  const { createServer } = await import("node:http");
+  const id = "36138019-6e3e-4843-9840-c134411b99f8";
+  const blob = Buffer.from("%PDF-1.7\nMCP fixture").toString("base64");
+  const requests = [];
+  const http = createServer(async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    requests.push({ url: req.url, body: JSON.parse(raw), key: req.headers["idempotency-key"] });
+    res.setHeader("Content-Type", "application/json");
+    res.end(
+      JSON.stringify(
+        req.url.endsWith("/read")
+          ? { success: true, artifact: { id, filename: "Test.pdf", mimeType: "application/pdf", blob } }
+          : {
+              success: true,
+              artifact: { id, filename: "Test.pdf", path: "/app/exports/Test.pdf", bytes: 20, sha256: "proof", pages: 1 },
+              source: { copy: "student", snapshotId: "snap_test", dirty: true },
+            },
+      ),
+    );
+  });
+  await new Promise((resolve) => http.listen(0, "127.0.0.1", resolve));
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(ROOT, "scripts", "mauth-agent-mcp.mjs")],
+    env: { ...process.env, MAUTH_AGENT_API_URL: `http://127.0.0.1:${http.address().port}` },
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "pdf-contract", version: "1" });
+  try {
+    await client.connect(transport);
+    const result = await client.callTool({
+      name: "mauth_pdf_export",
+      arguments: { copy: "student", documentId: "draft:1", baseSnapshotId: "snap_test", idempotencyKey: "pdf-retry" },
+    });
+    assert.equal(result.isError, undefined);
+    assert.equal(result.structuredContent.source.dirty, true);
+    assert.equal(result.content[1].type, "resource_link");
+    assert.equal(requests[0].key, "pdf-retry");
+    assert.deepEqual(requests[0].body, { copy: "student", documentId: "draft:1", baseSnapshotId: "snap_test" });
+    const read = await client.callTool({ name: "mauth_pdf_read", arguments: { id } });
+    assert.equal(read.content[1].resource.blob, blob);
+    assert.equal(read.structuredContent.artifact.blob, undefined);
+    const resource = await client.readResource({ uri: result.structuredContent.artifact.uri });
+    assert.equal(resource.contents[0].blob, blob);
+    assert.equal(resource.contents[0].mimeType, "application/pdf");
+  } finally {
+    await client.close();
+    await new Promise((resolve) => http.close(resolve));
   }
 });

@@ -1014,7 +1014,9 @@ export type MauthAgentRequestKind =
   | "documents.list"
   | "document.create"
   | "document.open"
-  | "document.close";
+  | "document.close"
+  | "pdf.export"
+  | "pdf.read";
 
 export interface MauthAgentMutationBase {
   snapshotId: string;
@@ -1149,6 +1151,8 @@ export interface MauthAgentSnapshot {
     documentCreate: { method: "POST"; href: string };
     documentOpen: { method: "POST"; href: string };
     documentClose: { method: "POST"; href: string };
+    pdfExport: { method: "POST"; href: string };
+    pdfRead: { method: "POST"; href: string };
     presence: { method: "POST"; href: string };
     events: string;
     comments: string;

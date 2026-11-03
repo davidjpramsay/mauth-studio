@@ -47,6 +47,12 @@ ipcRenderer.on(MAUTH_ACTIVE_DOCUMENT_CLOSE_CHANNEL, () => {
 });
 
 contextBridge.exposeInMainWorld("mauthDesktop", {
+  exportPdf(payload) {
+    return ipcRenderer.invoke("mauth:pdf-export", payload);
+  },
+  readPdf(id) {
+    return ipcRenderer.invoke("mauth:pdf-read", id);
+  },
   openDocuments() {
     return ipcRenderer.invoke("mauth:choose-document");
   },
